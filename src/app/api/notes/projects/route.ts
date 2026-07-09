@@ -95,9 +95,17 @@ export async function PATCH(req: Request) {
     }
 
     const userDir = getUserDir(username);
-    const oldDir = path.join(userDir, oldName);
+    const oldDir = path.normalize(path.join(userDir, oldName));
 
-    if (!fs.existsSync(oldDir)) {
+    console.log("PATCH PROJECT RENAME LOG:", {
+      username,
+      oldName,
+      userDir,
+      oldDir,
+      exists: fs.existsSync(oldDir)
+    });
+
+    if (!oldDir.startsWith(userDir) || !fs.existsSync(oldDir)) {
       return NextResponse.json({ error: 'Project does not exist' }, { status: 404 });
     }
 
