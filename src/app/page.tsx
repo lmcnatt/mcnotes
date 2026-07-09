@@ -424,26 +424,26 @@ export default function Dashboard() {
           transition-transform duration-200 ease-in-out
         `}
       >
-        <div className="sidebar-header">
-          <div className="sidebar-brand">McNatt Notes</div>
+        <div className="flex items-center justify-between p-4 border-b border-border-theme bg-sidebar-bg">
+          <div className="text-lg font-bold font-serif text-accent tracking-tight">McNatt Notes</div>
           
-          <div className="theme-selector">
+          <div className="flex gap-1">
             <button 
-              className={`theme-btn ${theme === 'sepia' ? 'active' : ''}`}
+              className={`p-1.5 rounded-lg text-text-muted hover:text-text-main hover:bg-card-hover transition ${theme === 'sepia' ? 'bg-card-bg text-accent border border-border-theme/40 shadow-sm' : ''}`}
               onClick={() => handleThemeChange('sepia')}
               title="Sepia Mode"
             >
               <Coffee size={14} />
             </button>
             <button 
-              className={`theme-btn ${theme === 'light' ? 'active' : ''}`}
+              className={`p-1.5 rounded-lg text-text-muted hover:text-text-main hover:bg-card-hover transition ${theme === 'light' ? 'bg-card-bg text-accent border border-border-theme/40 shadow-sm' : ''}`}
               onClick={() => handleThemeChange('light')}
               title="Light Mode"
             >
               <Sun size={14} />
             </button>
             <button 
-              className={`theme-btn ${theme === 'dark' ? 'active' : ''}`}
+              className={`p-1.5 rounded-lg text-text-muted hover:text-text-main hover:bg-card-hover transition ${theme === 'dark' ? 'bg-card-bg text-accent border border-border-theme/40 shadow-sm' : ''}`}
               onClick={() => handleThemeChange('dark')}
               title="Dark Mode"
             >
@@ -452,23 +452,26 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="sidebar-user">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-theme bg-sidebar-bg/50">
           <div className="user-info">
-            <span className="user-name">@{username}</span>
+            <span className="text-xs font-semibold text-text-muted">@{username}</span>
           </div>
-          <button className="logout-btn" onClick={handleLogout}>
-            <LogOut size={14} />
+          <button 
+            className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-text-muted hover:text-text-main border border-border-theme/60 hover:bg-card-bg rounded-lg transition"
+            onClick={handleLogout}
+          >
+            <LogOut size={12} />
             Logout
           </button>
         </div>
 
         {/* Global Search */}
-        <div className="search-container">
-          <div className="search-input-wrapper">
-            <Search size={14} className="search-icon" />
+        <div className="p-4 border-b border-border-theme bg-sidebar-bg/20">
+          <div className="relative flex items-center">
+            <Search size={14} className="absolute left-3 text-text-muted pointer-events-none" />
             <input
               type="text"
-              className="search-input"
+              className="w-full pl-9 pr-4 py-2 bg-card-bg border border-border-theme hover:border-accent focus:border-accent rounded-lg text-sm text-text-main placeholder-text-muted/65 focus:outline-none transition"
               placeholder="Search all notes..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
@@ -478,30 +481,30 @@ export default function Dashboard() {
 
         {/* Search Results or standard File Tree */}
         {searchQuery.trim() ? (
-          <div className="search-results-panel">
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-2">
               {searching ? 'Searching...' : `Found ${searchResults.length} matches`}
             </div>
             {searchResults.map(result => (
               <div 
                 key={result.relativePath}
-                className="search-result-item"
+                className="p-3 bg-card-bg border border-border-theme hover:border-accent rounded-lg cursor-pointer transition"
                 onClick={() => {
                   setSearchQuery('');
                   handleSelectNote(result.relativePath);
                 }}
               >
-                <div className="search-result-title">{result.title}</div>
-                <div className="search-result-path">{result.relativePath.replace('.md', '')}</div>
-                <div className="search-result-matches">
+                <div className="font-semibold text-xs text-text-main mb-1">{result.title}</div>
+                <div className="text-[10px] text-text-muted mb-2 truncate">{result.relativePath.replace('.md', '')}</div>
+                <div className="text-[10px] text-text-muted space-y-1">
                   {result.matches.map((match, i) => (
                     <div 
                       key={i} 
-                      className="search-result-match"
+                      className="line-clamp-2"
                       dangerouslySetInnerHTML={{
                         __html: `Line ${match.line}: ${match.text.replace(
                           new RegExp(`(${searchQuery})`, 'gi'),
-                          '<em>$1</em>'
+                          '<mark class="bg-accent/20 text-accent font-semibold px-0.5 rounded">$1</mark>'
                         )}`
                       }}
                     />
@@ -513,25 +516,25 @@ export default function Dashboard() {
         ) : (
           <>
             {/* Standard actions for tree root */}
-            <div className="sidebar-actions">
+            <div className="flex gap-2 p-4 border-b border-border-theme bg-sidebar-bg/10">
               <button 
-                className="action-btn"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold bg-accent text-white hover:bg-accent-hover rounded-lg transition shadow-sm"
                 onClick={() => {
                   setTargetPath(getActiveFolder());
                   setModalType('create_file');
                 }}
               >
-                <FilePlus size={14} />
+                <FilePlus size={12} />
                 New Note
               </button>
               <button 
-                className="action-btn"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold bg-card-bg border border-border-theme hover:border-accent text-text-main hover:bg-card-hover rounded-lg transition"
                 onClick={() => {
                   setTargetPath(getActiveFolder());
                   setModalType('create_folder');
                 }}
               >
-                <FolderPlus size={14} />
+                <FolderPlus size={12} />
                 New Folder
               </button>
             </div>
@@ -557,12 +560,12 @@ export default function Dashboard() {
       </div>
 
       {/* Main Workspace */}
-      <div className="workspace flex-1 pt-14 lg:pt-0">
+      <div className="flex-1 flex flex-col h-full overflow-hidden pt-14 lg:pt-0">
         {selectedPath ? (
           loadingNote ? (
-            <div className="empty-state">
+            <div className="flex-1 flex flex-col items-center justify-center gap-2.5 text-text-muted">
               <Loader className="animate-spin" size={24} />
-              <span>Loading document...</span>
+              <span className="text-xs font-semibold">Loading document...</span>
             </div>
           ) : (
             <EditorArea
@@ -574,32 +577,31 @@ export default function Dashboard() {
             />
           )
         ) : (
-          <div className="empty-state">
-            <div className="empty-logo">McNatt Cloud</div>
-            <p>Select a note from the sidebar or create a new one to start writing.</p>
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-app-bg select-none">
+            <div className="text-4xl font-bold font-serif text-border-theme mb-4 tracking-widest uppercase">McNatt Notes</div>
+            <p className="text-sm text-text-muted max-w-sm leading-relaxed">Select a note from the sidebar or create a new one to start writing.</p>
           </div>
         )}
       </div>
 
       {/* Dialog Modals */}
       {modalType && (
-        <div className="dialog-overlay">
+        <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           {modalType === 'delete' ? (
-            <div className="dialog">
-              <div className="dialog-title">Delete Item</div>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+            <div className="bg-card-bg border border-border-theme w-full max-w-md rounded-xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+              <div className="text-lg font-bold text-text-main">Delete Item</div>
+              <p className="text-sm text-text-muted leading-relaxed">
                 Are you sure you want to delete &quot;{targetPath.split('/').pop()?.replace('.md', '')}&quot;? This action cannot be undone.
               </p>
-              <div className="dialog-actions">
+              <div className="flex justify-end gap-2 pt-2">
                 <button 
-                  className="dialog-btn cancel"
+                  className="px-4 py-2 text-sm font-semibold text-text-muted hover:text-text-main hover:bg-card-hover rounded-lg transition"
                   onClick={() => setModalType(null)}
                 >
                   Cancel
                 </button>
                 <button 
-                  className="dialog-btn confirm"
-                  style={{ backgroundColor: '#e74c3c' }}
+                  className="px-4 py-2 text-sm font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg transition shadow-sm"
                   onClick={handleDeleteConfirm}
                 >
                   Delete
@@ -607,27 +609,27 @@ export default function Dashboard() {
               </div>
             </div>
           ) : (
-            <form onSubmit={handleCreateConfirm} className="dialog">
-              <div className="dialog-title">
+            <form onSubmit={handleCreateConfirm} className="bg-card-bg border border-border-theme w-full max-w-md rounded-xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+              <div className="text-lg font-bold text-text-main">
                 {modalType === 'create_file' ? 'Create New Note' : 'Create New Folder'}
               </div>
-              <div className="form-group">
-                <label className="form-label">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-text-muted">
                   {modalType === 'create_file' ? 'Note Name' : 'Folder Name'}
                 </label>
                 <input
                   type="text"
-                  className="form-input"
+                  className="w-full px-3 py-2 bg-app-bg border border-border-theme hover:border-accent focus:border-accent rounded-lg text-sm text-text-main focus:outline-none transition"
                   placeholder={modalType === 'create_file' ? 'e.g. Chapter 1' : 'e.g. Characters'}
                   value={modalInput}
                   onChange={e => setModalInput(e.target.value)}
                   autoFocus
                 />
               </div>
-              <div className="dialog-actions">
+              <div className="flex justify-end gap-2 pt-2">
                 <button 
                   type="button" 
-                  className="dialog-btn cancel"
+                  className="px-4 py-2 text-sm font-semibold text-text-muted hover:text-text-main hover:bg-card-hover rounded-lg transition"
                   onClick={() => {
                     setModalType(null);
                     setModalInput('');
@@ -637,7 +639,7 @@ export default function Dashboard() {
                 </button>
                 <button 
                   type="submit" 
-                  className="dialog-btn confirm"
+                  className="px-4 py-2 text-sm font-semibold text-white bg-accent hover:bg-accent-hover rounded-lg transition shadow-sm"
                 >
                   Create
                 </button>

@@ -131,17 +131,17 @@ export default function EditorArea({
   const folderPath = notePath.split('/').slice(0, -1).join(' > ');
 
   return (
-    <div className="workspace">
+    <div className="flex flex-col flex-1 h-full w-full overflow-hidden bg-card-bg">
       {/* Workspace Header */}
-      <div className="workspace-header">
-        <div className="note-path">
-          {folderPath && <span>{folderPath} &gt; </span>}
-          <span className="note-title-active">{noteName}</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-b border-border-theme bg-card-bg z-10">
+        <div className="flex items-center gap-1.5 text-xs text-text-muted truncate max-w-full">
+          {folderPath && <span className="opacity-75">{folderPath} &gt; </span>}
+          <span className="font-bold text-text-main text-sm">{noteName}</span>
         </div>
 
-        <div className="workspace-actions">
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
           {/* Save Status Indicator */}
-          <span className="save-indicator">
+          <span className="text-xs font-medium text-text-muted mr-1 select-none">
             {saveStatus === 'saving' && 'Saving...'}
             {saveStatus === 'saved' && 'Draft saved'}
             {saveStatus === 'unsaved' && 'Unsaved changes'}
@@ -149,7 +149,7 @@ export default function EditorArea({
 
           {/* Font Toggle */}
           <button 
-            className="btn-icon" 
+            className="p-2 text-text-muted hover:text-text-main hover:bg-card-hover rounded-lg transition" 
             title="Toggle Font Style (Serif/Sans)"
             onClick={() => setFontStyle(prev => prev === 'sans' ? 'serif' : 'sans')}
           >
@@ -158,7 +158,7 @@ export default function EditorArea({
 
           {/* Goal Setting */}
           <button 
-            className="btn-icon" 
+            className="p-2 text-text-muted hover:text-text-main hover:bg-card-hover rounded-lg transition" 
             title="Set Word Goal"
             onClick={() => {
               setGoalInput(wordGoal > 0 ? wordGoal.toString() : '');
@@ -169,42 +169,51 @@ export default function EditorArea({
           </button>
 
           {/* Mode Selector */}
-          <div className="mode-selector">
+          <div className="flex p-1 bg-sidebar-bg rounded-xl border border-border-theme/40">
             <button 
-              className={`mode-btn ${mode === 'source' ? 'active' : ''}`}
+              className={`
+                flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition select-none
+                ${mode === 'source' ? 'bg-card-bg text-accent shadow-sm border border-border-theme/40' : 'text-text-muted hover:text-text-main'}
+              `}
               onClick={() => setMode('source')}
               title="Markdown Source"
             >
-              <FileEdit size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
-              Source
+              <FileEdit size={12} />
+              <span className="hidden xs:inline">Source</span>
             </button>
             <button 
-              className={`mode-btn ${mode === 'split' ? 'active' : ''}`}
+              className={`
+                flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition select-none
+                ${mode === 'split' ? 'bg-card-bg text-accent shadow-sm border border-border-theme/40' : 'text-text-muted hover:text-text-main'}
+              `}
               onClick={() => setMode('split')}
               title="Split Screen"
             >
-              <Columns size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
-              Split
+              <Columns size={12} />
+              <span className="hidden xs:inline">Split</span>
             </button>
             <button 
-              className={`mode-btn ${mode === 'live' ? 'active' : ''}`}
+              className={`
+                flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition select-none
+                ${mode === 'live' ? 'bg-card-bg text-accent shadow-sm border border-border-theme/40' : 'text-text-muted hover:text-text-main'}
+              `}
               onClick={() => setMode('live')}
               title="Live Preview"
             >
-              <Eye size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
-              Live Preview
+              <Eye size={12} />
+              <span className="hidden xs:inline">Live Preview</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* Editor Body */}
-      <div className="editor-container">
+      <div className="flex-1 w-full h-full overflow-hidden flex">
         {mode === 'source' && (
-          <div className="editor-pane">
+          <div className="flex-1 h-full flex flex-col">
             <textarea
               ref={textareaRef}
-              className={`editor-textarea ${fontStyle}`}
+              className={`w-full h-full resize-none p-10 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto ${fontStyle === 'serif' ? 'font-serif' : 'font-sans'}`}
               value={content}
               onChange={handleChange}
               placeholder="Start writing in markdown..."
@@ -215,17 +224,17 @@ export default function EditorArea({
 
         {mode === 'split' && (
           <div className="split-pane-layout">
-            <div className="editor-pane">
+            <div className="flex-1 h-full flex flex-col">
               <textarea
                 ref={textareaRef}
-                className={`editor-textarea ${fontStyle}`}
+                className={`w-full h-full resize-none p-10 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto ${fontStyle === 'serif' ? 'font-serif' : 'font-sans'}`}
                 value={content}
                 onChange={handleChange}
                 placeholder="Start writing in markdown..."
                 autoFocus
               />
             </div>
-            <div className="preview-pane">
+            <div className="flex-1 h-full overflow-y-auto p-10 border-l border-border-theme bg-card-bg">
               <div className="markdown-body">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                   {preprocessMarkdown(content)}
@@ -238,22 +247,13 @@ export default function EditorArea({
         {mode === 'live' && (
           <div 
             ref={liveContainerRef}
-            className="live-preview-container"
+            className="flex-1 h-full overflow-y-auto p-10 bg-card-bg cursor-text"
             onClick={() => setIsFocused(true)}
-            style={{ 
-              flex: 1, 
-              padding: '40px', 
-              overflowY: 'auto', 
-              backgroundColor: 'var(--bg-card)',
-              height: '100%',
-              minHeight: '100%'
-            }}
           >
             {isFocused ? (
               <textarea
                 ref={textareaRef}
-                className={`editor-textarea ${fontStyle}`}
-                style={{ width: '100%', height: '100%', padding: '0', backgroundColor: 'transparent', border: 'none', outline: 'none', resize: 'none' }}
+                className={`w-full h-full resize-none p-0 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto ${fontStyle === 'serif' ? 'font-serif' : 'font-sans'}`}
                 value={content}
                 onChange={handleChange}
                 onBlur={() => setIsFocused(false)}
@@ -261,9 +261,9 @@ export default function EditorArea({
                 autoFocus
               />
             ) : (
-              <div className="markdown-body" style={{ minHeight: '100%' }}>
+              <div className="markdown-body min-h-full">
                 {content.trim() === '' ? (
-                  <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Empty document. Click to start writing...</p>
+                  <p className="text-text-muted italic select-none">Empty document. Click to start writing...</p>
                 ) : (
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                     {preprocessMarkdown(content)}
@@ -276,19 +276,19 @@ export default function EditorArea({
       </div>
 
       {/* Stats Footer */}
-      <div className="workspace-footer">
-        <div className="stats-group">
+      <div className="h-10 border-t border-border-theme bg-card-bg flex items-center justify-between px-6 text-xs text-text-muted select-none">
+        <div className="flex items-center gap-4">
           <span>{wordCount} words</span>
           <span>{charCount} characters</span>
           <span>{readTime} min read</span>
         </div>
 
         {wordGoal > 0 && (
-          <div className="goal-tracker">
+          <div className="flex items-center gap-2">
             <span>Goal: {wordCount} / {wordGoal} words</span>
-            <div className="progress-bar-bg" title={`${Math.min(100, Math.round((wordCount / wordGoal) * 100))}% completed`}>
+            <div className="w-24 h-1.5 bg-sidebar-bg rounded-full overflow-hidden" title={`${Math.min(100, Math.round((wordCount / wordGoal) * 100))}% completed`}>
               <div 
-                className="progress-bar-fg" 
+                className="h-full bg-accent transition-all duration-300" 
                 style={{ width: `${Math.min(100, (wordCount / wordGoal) * 100)}%` }}
               />
             </div>
@@ -298,14 +298,14 @@ export default function EditorArea({
 
       {/* Goal Modal */}
       {showGoalDialog && (
-        <div className="dialog-overlay">
-          <form onSubmit={handleGoalSubmit} className="dialog">
-            <div className="dialog-title">Set Writing Word Goal</div>
-            <div className="form-group">
-              <label className="form-label">Target Word Count (0 to disable)</label>
+        <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <form onSubmit={handleGoalSubmit} className="bg-card-bg border border-border-theme w-full max-w-md rounded-xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="text-lg font-bold text-text-main">Set Writing Word Goal</div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-text-muted">Target Word Count (0 to disable)</label>
               <input
                 type="number"
-                className="form-input"
+                className="w-full px-3 py-2 bg-app-bg border border-border-theme hover:border-accent focus:border-accent rounded-lg text-sm text-text-main focus:outline-none transition"
                 placeholder="e.g. 1000"
                 value={goalInput}
                 onChange={e => setGoalInput(e.target.value)}
@@ -313,17 +313,17 @@ export default function EditorArea({
                 min="0"
               />
             </div>
-            <div className="dialog-actions">
+            <div className="flex justify-end gap-2 pt-2">
               <button 
                 type="button" 
-                className="dialog-btn cancel"
+                className="px-4 py-2 text-sm font-semibold text-text-muted hover:text-text-main hover:bg-card-hover rounded-lg transition"
                 onClick={() => setShowGoalDialog(false)}
               >
                 Cancel
               </button>
               <button 
                 type="submit" 
-                className="dialog-btn confirm"
+                className="px-4 py-2 text-sm font-semibold text-white bg-accent hover:bg-accent-hover rounded-lg transition shadow-sm"
               >
                 Save Goal
               </button>

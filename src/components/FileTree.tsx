@@ -189,9 +189,13 @@ export default function FileTree({
 
     if (node.isDirectory) {
       return (
-        <div key={node.relativePath} className="tree-node">
+        <div key={node.relativePath} className="w-full">
           <div 
-            className={`node-row ${isSelected ? 'selected' : ''} ${draggedOverPath === node.relativePath ? 'drag-over' : ''}`}
+            className={`
+              group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer select-none transition-all duration-150
+              ${isSelected ? 'bg-card-bg font-medium shadow-sm border border-border-theme/40' : 'hover:bg-card-hover text-text-muted hover:text-text-main'}
+              ${draggedOverPath === node.relativePath ? 'bg-accent/10 border border-dashed border-accent' : ''}
+            `}
             onClick={() => {
               toggleFolder(node.relativePath);
               onSelect(node.relativePath);
@@ -202,16 +206,17 @@ export default function FileTree({
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, node)}
           >
-            {isExpanded ? (
-              <ChevronDown size={16} className="text-muted" />
-            ) : (
-              <ChevronRight size={16} className="text-muted" />
-            )}
+            <div className="flex items-center justify-center w-4 h-4">
+              {isExpanded ? (
+                <ChevronDown size={14} className="opacity-70" />
+              ) : (
+                <ChevronRight size={14} className="opacity-70" />
+              )}
+            </div>
             
             <span 
               onClick={(e) => toggleEmojiPicker(node.relativePath, e)}
-              className="folder-icon-trigger"
-              style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', padding: '2px', borderRadius: '4px' }}
+              className="inline-flex items-center justify-center p-0.5 rounded hover:bg-border transition"
               title="Click to change folder icon/emoji"
             >
               {getFolderIcon(node, isExpanded)}
@@ -220,7 +225,7 @@ export default function FileTree({
             {isEditing ? (
               <input
                 type="text"
-                className="inline-input"
+                className="bg-app-bg border border-accent rounded px-1.5 py-0.5 text-sm text-text-main focus:outline-none w-full max-w-[150px]"
                 value={editName}
                 onChange={e => setEditName(e.target.value)}
                 onBlur={() => finishRename(node)}
@@ -232,44 +237,43 @@ export default function FileTree({
                 onClick={e => e.stopPropagation()}
               />
             ) : (
-              <span className="node-label">{getFolderDisplayName(node.name)}</span>
+              <span className="text-sm truncate select-none">{getFolderDisplayName(node.name)}</span>
             )}
 
-            <div className="node-actions" onClick={e => e.stopPropagation()}>
+            <div className="invisible group-hover:visible flex items-center gap-1 ml-auto pl-2" onClick={e => e.stopPropagation()}>
               <button 
-                className="node-action-btn"
+                className="p-1 text-text-muted hover:text-accent hover:bg-card-bg rounded transition"
                 title="New Note"
                 onClick={() => onCreateItem('file', node.relativePath)}
               >
-                <Plus size={14} />
+                <Plus size={12} />
               </button>
               <button 
-                className="node-action-btn"
+                className="p-1 text-text-muted hover:text-accent hover:bg-card-bg rounded transition"
                 title="New Subfolder"
                 onClick={() => onCreateItem('directory', node.relativePath)}
               >
-                <FolderPlus size={14} />
+                <FolderPlus size={12} />
               </button>
-
               <button 
-                className="node-action-btn"
+                className="p-1 text-text-muted hover:text-accent hover:bg-card-bg rounded transition"
                 title="Rename folder"
                 onClick={e => startRename(node, e)}
               >
-                <Edit3 size={14} />
+                <Edit3 size={12} />
               </button>
               <button 
-                className="node-action-btn"
+                className="p-1 text-text-muted hover:text-red-500 hover:bg-red-500/10 rounded transition"
                 title="Delete folder"
                 onClick={() => onDeleteItem(node.relativePath)}
               >
-                <Trash size={14} />
+                <Trash size={12} />
               </button>
             </div>
           </div>
           
           {isExpanded && node.children && (
-            <div className="folder-children" style={{ borderLeft: '1px solid var(--border)', marginLeft: '10px' }}>
+            <div className="pl-4 border-l border-border-theme/30 ml-5 space-y-0.5 mt-0.5">
               {node.children.map(child => renderNode(child))}
             </div>
           )}
@@ -279,21 +283,25 @@ export default function FileTree({
       return (
         <div 
           key={node.relativePath}
-          className={`node-row ${isSelected ? 'selected' : ''} ${draggedOverPath === node.relativePath ? 'drag-over' : ''}`}
+          className={`
+            group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer select-none transition-all duration-150
+            ${isSelected ? 'bg-card-bg font-medium shadow-sm border border-border-theme/40 text-accent' : 'hover:bg-card-hover text-text-muted hover:text-text-main'}
+            ${draggedOverPath === node.relativePath ? 'bg-accent/10 border border-dashed border-accent' : ''}
+          `}
           onClick={() => onSelect(node.relativePath)}
-          style={{ paddingLeft: '24px' }}
+          style={{ paddingLeft: '28px' }}
           draggable
           onDragStart={(e) => handleDragStart(e, node.relativePath)}
           onDragOver={(e) => handleDragOver(e, node)}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, node)}
         >
-          <FileText size={16} className="text-muted" />
+          <FileText size={14} className="opacity-70" />
           
           {isEditing ? (
             <input
               type="text"
-              className="inline-input"
+              className="bg-app-bg border border-accent rounded px-1.5 py-0.5 text-sm text-text-main focus:outline-none w-full max-w-[150px]"
               value={editName}
               onChange={e => setEditName(e.target.value)}
               onBlur={() => finishRename(node)}
@@ -305,23 +313,23 @@ export default function FileTree({
               onClick={e => e.stopPropagation()}
             />
           ) : (
-            <span className="node-label">{node.name.replace('.md', '')}</span>
+            <span className="text-sm truncate select-none">{node.name.replace('.md', '')}</span>
           )}
 
-          <div className="node-actions" onClick={e => e.stopPropagation()}>
+          <div className="invisible group-hover:visible flex items-center gap-1 ml-auto pl-2" onClick={e => e.stopPropagation()}>
             <button 
-              className="node-action-btn"
+              className="p-1 text-text-muted hover:text-accent hover:bg-card-bg rounded transition"
               title="Rename file"
               onClick={e => startRename(node, e)}
             >
-              <Edit3 size={14} />
+              <Edit3 size={12} />
             </button>
             <button 
-              className="node-action-btn"
+              className="p-1 text-text-muted hover:text-red-500 hover:bg-red-500/10 rounded transition"
               title="Delete file"
               onClick={() => onDeleteItem(node.relativePath)}
             >
-              <Trash size={14} />
+              <Trash size={12} />
             </button>
           </div>
         </div>
@@ -331,13 +339,13 @@ export default function FileTree({
 
   return (
     <div 
-      className="tree-container"
+      className="flex-1 overflow-y-auto p-4 space-y-0.5"
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDropAtRoot}
     >
       {tree.length === 0 ? (
-        <div style={{ padding: '20px', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-          No notes yet. Click "+" below to start.
+        <div className="py-8 text-center text-xs text-text-muted">
+          No notes yet. Click "New Note" above to start.
         </div>
       ) : (
         tree.map(node => renderNode(node))
@@ -345,33 +353,21 @@ export default function FileTree({
 
       {activeEmojiPickerPath && (
         <div 
-          className="emoji-picker-popup"
+          className="fixed z-50 w-56 p-3 rounded-xl border border-border-theme bg-card-bg shadow-xl flex flex-col gap-2.5 animate-in fade-in slide-in-from-top-2 duration-150"
           style={{
-            position: 'fixed',
             left: `${Math.min(window.innerWidth - 240, pickerPosition.x)}px`,
             top: `${Math.min(window.innerHeight - 250, pickerPosition.y + 10)}px`,
-            zIndex: 2000,
-            backgroundColor: 'var(--bg-card)',
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            padding: '12px',
-            boxShadow: 'var(--shadow)',
-            width: '220px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px'
           }}
           onClick={e => e.stopPropagation()}
         >
-          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+          <div className="text-xs font-semibold text-text-muted">
             Set Folder Icon (Emoji)
           </div>
           
           <input
             type="text"
             placeholder="Type or paste emoji..."
-            className="form-input"
-            style={{ fontSize: '1rem', padding: '6px 10px', textAlign: 'center', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border)', borderRadius: '6px' }}
+            className="w-full text-center text-sm py-1.5 bg-app-bg border border-border-theme hover:border-accent focus:border-accent rounded-lg focus:outline-none transition"
             onChange={(e) => {
               const val = e.target.value.trim();
               if (val) {
@@ -381,24 +377,23 @@ export default function FileTree({
             autoFocus
           />
           
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center', lineHeight: '1.4' }}>
-            Tip: Press <b>Win + .</b> or <b>Cmd + Ctrl + Space</b> to open system emoji panel
+          <div className="text-[10px] text-text-muted text-center leading-normal">
+            Press <b>Win + .</b> or <b>Cmd + Ctrl + Space</b> to open system panel
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'center', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+          <div className="flex flex-wrap gap-1.5 justify-center border-t border-border-theme/40 pt-2.5">
             {['📖', '📚', '✍️', '📂', '💡', '📝', '📓', '🎨', '🎭', '🎬', '🚀', '📅', '📌', '📁', '❤️', '🔍', '⭐', '🔥'].map(emoji => (
               <button
                 key={emoji}
-                style={{ fontSize: '18px', padding: '3px', borderRadius: '4px' }}
                 onClick={() => handleSelectEmoji(activeEmojiPickerPath, emoji)}
-                className="emoji-select-btn"
+                className="text-lg p-1 rounded hover:bg-app-bg active:scale-95 transition"
               >
                 {emoji}
               </button>
             ))}
           </div>
           <button
-            style={{ width: '100%', fontSize: '0.8rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border)', paddingTop: '6px', marginTop: '2px' }}
+            className="w-full text-xs text-text-muted hover:text-red-500 border-t border-border-theme/40 pt-2 mt-1 transition"
             onClick={() => handleSelectEmoji(activeEmojiPickerPath, '')}
           >
             Remove Icon
