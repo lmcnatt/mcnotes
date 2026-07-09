@@ -795,7 +795,6 @@ body {
   background-color: var(--bg-card);
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .live-editor-line {
@@ -807,6 +806,7 @@ body {
   font-family: inherit;
   transition: background-color 0.15s;
   white-space: pre-wrap;
+  margin-bottom: 4px;
 }
 
 .live-editor-line:hover {
@@ -849,11 +849,31 @@ body {
 
 .live-editor-line.live-blockquote {
   border-left: 4px solid var(--accent);
-  padding: 8px 20px;
+  padding: 2px 20px;
   color: var(--text-muted);
   background-color: var(--bg-sidebar);
-  border-radius: 0 4px 4px 0;
-  margin: 0.8em 0;
+  border-radius: 0;
+  margin: 0;
+}
+
+/* First line of blockquote block */
+.live-editor-line.live-blockquote:not(.live-blockquote + .live-blockquote) {
+  margin-top: 0.8em;
+  padding-top: 10px;
+  border-top-right-radius: 4px;
+}
+
+/* Last line of blockquote block */
+.live-editor-line.live-blockquote:last-child,
+.live-editor-line.live-blockquote:has(+ :not(.live-blockquote)) {
+  padding-bottom: 10px;
+  border-bottom-right-radius: 4px;
+  margin-bottom: 0.8em;
+}
+
+/* Spacer after a blockquote block */
+.live-editor-line.live-blockquote + :not(.live-blockquote) {
+  margin-top: 0.8em;
 }
 
 .live-editor-line.live-list-item {
