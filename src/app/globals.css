@@ -518,7 +518,7 @@ body {
 .markdown-body h3 { font-size: 1.3rem; }
 
 .markdown-body p {
-  margin-bottom: 1em;
+  margin-bottom: 0.5em;
 }
 
 .markdown-body blockquote {
@@ -527,8 +527,15 @@ body {
   color: var(--text-muted);
   background-color: var(--bg-sidebar);
   border-radius: 0 4px 4px 0;
-  margin: 1.2em 0;
-  font-style: italic;
+  margin: 0.8em 0;
+}
+
+.markdown-body blockquote p {
+  margin-bottom: 0.5em;
+}
+
+.markdown-body blockquote p:last-child {
+  margin-bottom: 0;
 }
 
 .markdown-body code {
