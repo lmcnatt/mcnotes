@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -p 3010",
-    "reload": "pm2 reload notes",
+    "reload": "npm run build && pm2 reload notes",
     "lint": "eslint"
   },
   "dependencies": {
