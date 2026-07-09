@@ -21,97 +21,7 @@ interface EditorAreaProps {
 type EditMode = 'source' | 'split' | 'live';
 type FontStyle = 'sans' | 'serif';
 
-const getLineClasses = (lines: string[]): string[] => {
-  const classes: string[] = [];
-  let inBlockquote = false;
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    let lineClass = "live-editor-line";
-    
-    if (line.startsWith('> ')) {
-      inBlockquote = true;
-      lineClass += " live-blockquote";
-    } else if (inBlockquote && line.trim() !== '' && !line.startsWith('#')) {
-      lineClass += " live-blockquote";
-    } else {
-      inBlockquote = false;
-    }
-    
-    if (line.startsWith('# ')) lineClass += " live-h1";
-    else if (line.startsWith('## ')) lineClass += " live-h2";
-    else if (line.startsWith('### ')) lineClass += " live-h3";
-    
-    classes.push(lineClass);
-  }
-  
-  return classes;
-};
 
-const WYSIWYGEditor = ({ 
-  content, 
-  onChange, 
-  fontStyle 
-}: { 
-  content: string; 
-  onChange: (val: string) => void; 
-  fontStyle: string;
-}) => {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const isEditing = useRef(false);
-
-  // Parse raw markdown to styled DIV lines on mount/note change
-  useEffect(() => {
-    if (editorRef.current && !isEditing.current) {
-      const lines = content.split('\n');
-      const classes = getLineClasses(lines);
-      const html = lines.map((line, index) => {
-        return `<div class="${classes[index]}">${line === '' ? '<br>' : line}</div>`;
-      }).join('');
-      editorRef.current.innerHTML = html;
-    }
-  }, [content]);
-
-  const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
-    isEditing.current = true;
-    
-    const container = e.currentTarget;
-    const children = Array.from(container.children) as HTMLElement[];
-    const lines = children.map(child => child.innerText || '');
-    const classes = getLineClasses(lines);
-    
-    children.forEach((child, index) => {
-      if (child.className !== classes[index]) {
-        child.className = classes[index];
-      }
-    });
-
-    const rawMarkdown = container.innerText || '';
-    onChange(rawMarkdown.replace(/\r\n/g, '\n'));
-  };
-
-  const handleBlur = () => {
-    isEditing.current = false;
-  };
-
-  return (
-    <div 
-      ref={editorRef}
-      className={`markdown-body ${fontStyle}`}
-      contentEditable
-      suppressContentEditableWarning
-      onInput={handleInput}
-      onBlur={handleBlur}
-      style={{ 
-        flex: 1, 
-        padding: '40px', 
-        outline: 'none',
-        height: '100%',
-        minHeight: '100%'
-      }}
-    />
-  );
-};
 
 export default function EditorArea({
   notePath,
@@ -326,14 +236,42 @@ export default function EditorArea({
         )}
 
         {mode === 'live' && (
-          <WYSIWYGEditor 
-            content={content}
-            onChange={(val) => {
-              setContent(val);
-              onSave(val);
+          <div 
+            ref={liveContainerRef}
+            className="live-preview-container"
+            onClick={() => setIsFocused(true)}
+            style={{ 
+              flex: 1, 
+              padding: '40px', 
+              overflowY: 'auto', 
+              backgroundColor: 'var(--bg-card)',
+              height: '100%',
+              minHeight: '100%'
             }}
-            fontStyle={fontStyle}
-          />
+          >
+            {isFocused ? (
+              <textarea
+                ref={textareaRef}
+                className={`editor-textarea ${fontStyle}`}
+                style={{ width: '100%', height: '100%', padding: '0', backgroundColor: 'transparent', border: 'none', outline: 'none', resize: 'none' }}
+                value={content}
+                onChange={handleChange}
+                onBlur={() => setIsFocused(false)}
+                placeholder="Start writing in markdown..."
+                autoFocus
+              />
+            ) : (
+              <div className="markdown-body" style={{ minHeight: '100%' }}>
+                {content.trim() === '' ? (
+                  <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Empty document. Click to start writing...</p>
+                ) : (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                    {preprocessMarkdown(content)}
+                  </ReactMarkdown>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
