@@ -21,32 +21,154 @@ interface EditorAreaProps {
 type EditMode = 'source' | 'split' | 'live';
 type FontStyle = 'sans' | 'serif';
 
-const getLineClasses = (lines: string[]): string[] => {
-  const classes: string[] = [];
+function htmlToMarkdownVisual(html: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const body = doc.body;
+
+  let markdown = '';
+
+  function serialize(node: Node): string {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.nodeValue || '';
+    }
+
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      const tag = el.tagName.toLowerCase();
+      let childrenVal = '';
+
+      el.childNodes.forEach(child => {
+        childrenVal += serialize(child);
+      });
+
+      switch (tag) {
+        case 'h1':
+          return `# ${childrenVal.trim()}\n\n`;
+        case 'h2':
+          return `## ${childrenVal.trim()}\n\n`;
+        case 'h3':
+          return `### ${childrenVal.trim()}\n\n`;
+        case 'blockquote':
+          const lines = childrenVal.trim().split('\n');
+          return lines.map(line => `> ${line.trim()}`).join('\n') + '\n\n';
+        case 'ul':
+          return `${childrenVal}\n`;
+        case 'li':
+          return `- ${childrenVal.trim()}\n`;
+        case 'strong':
+        case 'b':
+          return `**${childrenVal}**`;
+        case 'em':
+        case 'i':
+          return `*${childrenVal}*`;
+        case 'code':
+          return `\`${childrenVal}\``;
+        case 'p':
+        case 'div':
+          if (childrenVal.trim() === '' || el.innerHTML === '<br>') {
+            return '\n';
+          }
+          return `${childrenVal.trim()}\n\n`;
+        case 'br':
+          return '\n';
+        default:
+          return childrenVal;
+      }
+    }
+    return '';
+  }
+
+  body.childNodes.forEach(node => {
+    markdown += serialize(node);
+  });
+
+  return markdown.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function markdownToHTMLVisual(markdown: string): string {
+  if (!markdown) return '<p><br></p>';
+
+  const lines = markdown.split('\n');
+  const htmlChunks: string[] = [];
+  let inList = false;
   let inBlockquote = false;
-  
+  let blockquoteLines: string[] = [];
+
+  const flushBlockquote = () => {
+    if (blockquoteLines.length > 0) {
+      const content = blockquoteLines.map(line => {
+        let text = line.substring(2);
+        text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+        return `<p>${text === '' ? '<br>' : text}</p>`;
+      }).join('');
+      htmlChunks.push(`<blockquote>${content}</blockquote>`);
+      blockquoteLines = [];
+    }
+  };
+
+  const flushList = () => {
+    if (inList) {
+      htmlChunks.push('</ul>');
+      inList = false;
+    }
+  };
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    let lineClass = "live-editor-line";
-    
-    if (line.startsWith('> ')) {
+
+    const isQuote = line.startsWith('> ');
+    if (isQuote) {
+      flushList();
+      blockquoteLines.push(line);
       inBlockquote = true;
-      lineClass += " live-blockquote";
+      continue;
     } else if (inBlockquote && line.trim() !== '' && !line.startsWith('#')) {
-      lineClass += " live-blockquote";
+      blockquoteLines.push('> ' + line);
+      continue;
     } else {
       inBlockquote = false;
+      flushBlockquote();
     }
-    
-    if (line.startsWith('# ')) lineClass += " live-h1";
-    else if (line.startsWith('## ')) lineClass += " live-h2";
-    else if (line.startsWith('### ')) lineClass += " live-h3";
-    
-    classes.push(lineClass);
+
+    const isList = line.startsWith('- ') || line.startsWith('* ');
+    if (isList) {
+      if (!inList) {
+        inList = true;
+        htmlChunks.push('<ul>');
+      }
+      let text = line.substring(2);
+      text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      htmlChunks.push(`<li>${text === '' ? '<br>' : text}</li>`);
+      continue;
+    } else {
+      flushList();
+    }
+
+    let processedText = line;
+    processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    processedText = processedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+    if (line.startsWith('# ')) {
+      htmlChunks.push(`<h1>${processedText.substring(2)}</h1>`);
+    } else if (line.startsWith('## ')) {
+      htmlChunks.push(`<h2>${processedText.substring(3)}</h2>`);
+    } else if (line.startsWith('### ')) {
+      htmlChunks.push(`<h3>${processedText.substring(4)}</h3>`);
+    } else if (line.trim() === '') {
+      htmlChunks.push('<p><br></p>');
+    } else {
+      htmlChunks.push(`<p>${processedText}</p>`);
+    }
   }
-  
-  return classes;
-};
+
+  flushList();
+  flushBlockquote();
+
+  return htmlChunks.join('');
+}
 
 const WYSIWYGEditor = ({ 
   content, 
@@ -60,34 +182,56 @@ const WYSIWYGEditor = ({
   const editorRef = useRef<HTMLDivElement>(null);
   const isEditing = useRef(false);
 
-  // Parse raw markdown to styled DIV lines on mount/note change
+  // Sync Markdown to structured HTML on note swap or load
   useEffect(() => {
     if (editorRef.current && !isEditing.current) {
-      const lines = content.split('\n');
-      const classes = getLineClasses(lines);
-      const html = lines.map((line, index) => {
-        return `<div class="${classes[index]}">${line === '' ? '<br>' : line}</div>`;
-      }).join('');
-      editorRef.current.innerHTML = html;
+      editorRef.current.innerHTML = markdownToHTMLVisual(content);
     }
   }, [content]);
 
+  // Handle markdown shortcuts (typing `# `, `## `, `> `, `- `)
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === ' ') {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+
+      const range = selection.getRangeAt(0);
+      let container = range.startContainer;
+      if (container.nodeType === Node.TEXT_NODE) {
+        container = container.parentNode!;
+      }
+
+      const el = container as HTMLElement;
+      const text = el.innerText || '';
+
+      if (text === '#') {
+        e.preventDefault();
+        el.innerText = '';
+        document.execCommand('formatBlock', false, 'h1');
+      } else if (text === '##') {
+        e.preventDefault();
+        el.innerText = '';
+        document.execCommand('formatBlock', false, 'h2');
+      } else if (text === '###') {
+        e.preventDefault();
+        el.innerText = '';
+        document.execCommand('formatBlock', false, 'h3');
+      } else if (text === '>') {
+        e.preventDefault();
+        el.innerText = '';
+        document.execCommand('formatBlock', false, 'blockquote');
+      } else if (text === '-') {
+        e.preventDefault();
+        el.innerText = '';
+        document.execCommand('insertUnorderedList');
+      }
+    }
+  };
+
   const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
     isEditing.current = true;
-    
-    const container = e.currentTarget;
-    const children = Array.from(container.children) as HTMLElement[];
-    const lines = children.map(child => child.innerText || '');
-    const classes = getLineClasses(lines);
-    
-    children.forEach((child, index) => {
-      if (child.className !== classes[index]) {
-        child.className = classes[index];
-      }
-    });
-
-    const rawMarkdown = container.innerText || '';
-    onChange(rawMarkdown.replace(/\r\n/g, '\n'));
+    const updatedMarkdown = htmlToMarkdownVisual(e.currentTarget.innerHTML);
+    onChange(updatedMarkdown);
   };
 
   const handleBlur = () => {
@@ -100,6 +244,7 @@ const WYSIWYGEditor = ({
       className={`markdown-body ${fontStyle}`}
       contentEditable
       suppressContentEditableWarning
+      onKeyDown={handleKeyDown}
       onInput={handleInput}
       onBlur={handleBlur}
       style={{ 
