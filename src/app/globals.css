@@ -1,3 +1,4 @@
+@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&display=swap');
 
 :root {
@@ -55,7 +56,6 @@ body {
   color: var(--text-main);
   font-family: var(--font-sans);
   height: 100vh;
-  overflow: hidden;
 }
 
 /* Custom Scrollbars */
@@ -77,79 +77,27 @@ body {
   background: var(--text-muted);
 }
 
-/* Custom Button Reset */
-button {
-  background: none;
-  border: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  outline: none;
+/* Custom Button Reset — inside @layer base so Tailwind utilities take precedence */
+@layer base {
+  button {
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    outline: none;
+  }
+
+  input, textarea {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    outline: none;
+  }
 }
 
-input, textarea {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: none;
-  outline: none;
-}
-
-/* Auth Page layout */
-.auth-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: 24px;
-  background-color: var(--bg-app);
-}
-
-.auth-card {
-  width: 100%;
-  max-width: 440px;
-  background-color: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 40px;
-  box-shadow: var(--shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  backdrop-filter: blur(10px);
-}
-
-.auth-header {
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.auth-logo {
-  font-family: var(--font-serif);
-  font-size: 2.2rem;
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: -0.02em;
-}
-
-.auth-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-main);
-}
-
-.auth-subtitle {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-}
-
-.auth-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+/* Form Components (shared) */
 
 .form-group {
   display: flex;
@@ -176,53 +124,12 @@ input, textarea {
   border-color: var(--accent);
 }
 
-.auth-btn {
-  background-color: var(--accent);
-  color: #fff;
-  font-weight: 600;
-  padding: 12px;
-  border-radius: var(--radius);
-  text-align: center;
-  transition: background-color 0.2s;
-  font-size: 1rem;
-}
-
-.auth-btn:hover {
-  background-color: var(--accent-hover);
-}
-
-.auth-footer {
-  text-align: center;
-  font-size: 0.875rem;
-  color: var(--text-muted);
-}
-
-.auth-link {
-  color: var(--accent);
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.auth-link:hover {
-  text-decoration: underline;
-}
-
-.error-banner {
-  background-color: rgba(231, 76, 60, 0.1);
-  border: 1px solid rgba(231, 76, 60, 0.3);
-  color: #e74c3c;
-  padding: 12px;
-  border-radius: var(--radius);
-  font-size: 0.875rem;
-  text-align: center;
-}
-
 /* App Dashboard Layout */
 .dashboard-layout {
   display: flex;
   width: 100vw;
   height: 100vh;
-  overflow: hidden;
+  overflow: hidden; /* scoped here so auth pages can scroll */
   background-color: var(--bg-app);
 }
 
