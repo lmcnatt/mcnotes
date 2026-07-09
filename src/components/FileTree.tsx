@@ -32,6 +32,67 @@ export default function FileTree({
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [draggedOverPath, setDraggedOverPath] = useState<string | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, path: string) => {
+    e.dataTransfer.setData('text/plain', path);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, targetNode: FileNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (targetNode.relativePath !== draggedOverPath) {
+      setDraggedOverPath(targetNode.relativePath);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDraggedOverPath(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetNode: FileNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDraggedOverPath(null);
+
+    const draggedPath = e.dataTransfer.getData('text/plain');
+    if (!draggedPath || draggedPath === targetNode.relativePath) return;
+
+    let targetFolder = '';
+    if (targetNode.isDirectory) {
+      targetFolder = targetNode.relativePath;
+    } else {
+      const lastSlash = targetNode.relativePath.lastIndexOf('/');
+      targetFolder = lastSlash === -1 ? '' : targetNode.relativePath.substring(0, lastSlash);
+    }
+
+    if (targetFolder === draggedPath || targetFolder.startsWith(draggedPath + '/')) {
+      alert("Cannot move a folder inside itself or its own subfolders.");
+      return;
+    }
+
+    const fileName = draggedPath.split('/').pop()!;
+    const newPath = targetFolder ? `${targetFolder}/${fileName}` : fileName;
+
+    if (draggedPath !== newPath) {
+      onRenameItem(draggedPath, newPath);
+    }
+  };
+
+  const handleDropAtRoot = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDraggedOverPath(null);
+
+    const draggedPath = e.dataTransfer.getData('text/plain');
+    if (!draggedPath) return;
+
+    if (!draggedPath.includes('/')) return;
+
+    const fileName = draggedPath.split('/').pop()!;
+    onRenameItem(draggedPath, fileName);
+  };
 
   const toggleFolder = (path: string) => {
     setExpandedFolders(prev => ({
@@ -64,11 +125,16 @@ export default function FileTree({
       return (
         <div key={node.relativePath} className="tree-node">
           <div 
-            className={`node-row ${isSelected ? 'selected' : ''}`}
+            className={`node-row ${isSelected ? 'selected' : ''} ${draggedOverPath === node.relativePath ? 'drag-over' : ''}`}
             onClick={() => {
               toggleFolder(node.relativePath);
               onSelect(node.relativePath);
             }}
+            draggable
+            onDragStart={(e) => handleDragStart(e, node.relativePath)}
+            onDragOver={(e) => handleDragOver(e, node)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, node)}
           >
             {isExpanded ? (
               <ChevronDown size={16} className="text-muted" />
@@ -143,9 +209,14 @@ export default function FileTree({
       return (
         <div 
           key={node.relativePath}
-          className={`node-row ${isSelected ? 'selected' : ''}`}
+          className={`node-row ${isSelected ? 'selected' : ''} ${draggedOverPath === node.relativePath ? 'drag-over' : ''}`}
           onClick={() => onSelect(node.relativePath)}
           style={{ paddingLeft: '24px' }}
+          draggable
+          onDragStart={(e) => handleDragStart(e, node.relativePath)}
+          onDragOver={(e) => handleDragOver(e, node)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, node)}
         >
           <FileText size={16} className="text-muted" />
           
@@ -189,7 +260,11 @@ export default function FileTree({
   };
 
   return (
-    <div className="tree-container">
+    <div 
+      className="tree-container"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDropAtRoot}
+    >
       {tree.length === 0 ? (
         <div style={{ padding: '20px', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
           No notes yet. Click "+" below to start.
