@@ -21,116 +21,6 @@ interface EditorAreaProps {
 type EditMode = 'source' | 'split' | 'live';
 type FontStyle = 'sans' | 'serif';
 
-function markdownToHTML(markdown: string): string {
-  if (!markdown) return '<p><br></p>';
-  
-  const lines = markdown.split('\n');
-  let inList = false;
-  const htmlChunks: string[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    
-    const isListLine = line.startsWith('- ') || line.startsWith('* ');
-    if (isListLine && !inList) {
-      inList = true;
-      htmlChunks.push('<ul>');
-    } else if (!isListLine && inList) {
-      inList = false;
-      htmlChunks.push('</ul>');
-    }
-
-    let processedText = line;
-    
-    // Bold: **text** -> <strong>text</strong>
-    processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    // Italic: *text* -> <em>text</em>
-    processedText = processedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
-    // Inline code: `text` -> <code>text</code>
-    processedText = processedText.replace(/`(.*?)`/g, '<code>$1</code>');
-
-    if (line.startsWith('# ')) {
-      htmlChunks.push(`<h1>${processedText.substring(2)}</h1>`);
-    } else if (line.startsWith('## ')) {
-      htmlChunks.push(`<h2>${processedText.substring(3)}</h2>`);
-    } else if (line.startsWith('### ')) {
-      htmlChunks.push(`<h3>${processedText.substring(4)}</h3>`);
-    } else if (line.startsWith('> ')) {
-      htmlChunks.push(`<blockquote>${processedText.substring(2)}</blockquote>`);
-    } else if (isListLine) {
-      htmlChunks.push(`<li>${processedText.substring(2)}</li>`);
-    } else {
-      htmlChunks.push(`<p>${processedText === '' ? '<br>' : processedText}</p>`);
-    }
-  }
-
-  if (inList) {
-    htmlChunks.push('</ul>');
-  }
-
-  return htmlChunks.join('');
-}
-
-function htmlToMarkdown(htmlElement: HTMLElement): string {
-  let markdown = '';
-  
-  function serializeNode(node: Node): string {
-    if (node.nodeType === Node.TEXT_NODE) {
-      return node.nodeValue || '';
-    }
-    
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as HTMLElement;
-      const tag = el.tagName.toLowerCase();
-      let childrenVal = '';
-      
-      el.childNodes.forEach(child => {
-        childrenVal += serializeNode(child);
-      });
-      
-      switch (tag) {
-        case 'h1':
-          return `# ${childrenVal}\n`;
-        case 'h2':
-          return `## ${childrenVal}\n`;
-        case 'h3':
-          return `### ${childrenVal}\n`;
-        case 'blockquote':
-          return `> ${childrenVal}\n`;
-        case 'ul':
-          return `${childrenVal}\n`;
-        case 'li':
-          return `- ${childrenVal}\n`;
-        case 'strong':
-        case 'b':
-          return `**${childrenVal}**`;
-        case 'em':
-        case 'i':
-          return `*${childrenVal}*`;
-        case 'code':
-          return `\`${childrenVal}\``;
-        case 'p':
-        case 'div':
-          if (childrenVal === '' || el.innerHTML === '<br>') {
-            return '\n';
-          }
-          return `${childrenVal}\n`;
-        case 'br':
-          return '\n';
-        default:
-          return childrenVal;
-      }
-    }
-    return '';
-  }
-  
-  htmlElement.childNodes.forEach(node => {
-    markdown += serializeNode(node);
-  });
-  
-  return markdown.replace(/\n{3,}/g, '\n\n').trim();
-}
-
 const WYSIWYGEditor = ({ 
   content, 
   onChange, 
@@ -143,76 +33,45 @@ const WYSIWYGEditor = ({
   const editorRef = useRef<HTMLDivElement>(null);
   const isEditing = useRef(false);
 
+  // Parse raw markdown to styled DIV lines on mount/note change
   useEffect(() => {
     if (editorRef.current && !isEditing.current) {
-      editorRef.current.innerHTML = markdownToHTML(content);
+      const lines = content.split('\n');
+      const html = lines.map(line => {
+        let lineClass = "live-editor-line";
+        if (line.startsWith('# ')) lineClass += " live-h1";
+        else if (line.startsWith('## ')) lineClass += " live-h2";
+        else if (line.startsWith('### ')) lineClass += " live-h3";
+        else if (line.startsWith('> ')) lineClass += " live-blockquote";
+        return `<div class="${lineClass}">${line === '' ? '<br>' : line}</div>`;
+      }).join('');
+      editorRef.current.innerHTML = html;
     }
   }, [content]);
 
   const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
     isEditing.current = true;
     
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-      let container = range.startContainer;
-
-      if (container.nodeType === Node.TEXT_NODE) {
-        container = container.parentNode!;
-      }
-
-      const el = container as HTMLElement;
+    const container = e.currentTarget;
+    
+    // Dynamically update class names of DOM children based on markdown prefixes
+    Array.from(container.children).forEach(child => {
+      const el = child as HTMLElement;
       const text = el.innerText || '';
-
-      const focusElement = (element: HTMLElement) => {
-        setTimeout(() => {
-          element.focus();
-          const r = document.createRange();
-          const s = window.getSelection();
-          r.selectNodeContents(element);
-          r.collapse(false);
-          s?.removeAllRanges();
-          s?.addRange(r);
-        }, 0);
-      };
-
-      if (text.startsWith('# ')) {
-        el.innerText = text.substring(2);
-        const newEl = document.createElement('h1');
-        newEl.innerHTML = el.innerHTML || '<br>';
-        el.parentNode?.replaceChild(newEl, el);
-        focusElement(newEl);
-      } else if (text.startsWith('## ')) {
-        el.innerText = text.substring(3);
-        const newEl = document.createElement('h2');
-        newEl.innerHTML = el.innerHTML || '<br>';
-        el.parentNode?.replaceChild(newEl, el);
-        focusElement(newEl);
-      } else if (text.startsWith('### ')) {
-        el.innerText = text.substring(4);
-        const newEl = document.createElement('h3');
-        newEl.innerHTML = el.innerHTML || '<br>';
-        el.parentNode?.replaceChild(newEl, el);
-        focusElement(newEl);
-      } else if (text.startsWith('> ')) {
-        el.innerText = text.substring(2);
-        const newEl = document.createElement('blockquote');
-        newEl.innerHTML = el.innerHTML || '<br>';
-        el.parentNode?.replaceChild(newEl, el);
-        focusElement(newEl);
-      } else if (text.startsWith('- ') || text.startsWith('* ')) {
-        el.innerText = text.substring(2);
-        const ul = document.createElement('ul');
-        const li = document.createElement('li');
-        li.innerHTML = el.innerHTML || '<br>';
-        ul.appendChild(li);
-        el.parentNode?.replaceChild(ul, el);
-        focusElement(li);
+      
+      let lineClass = "live-editor-line";
+      if (text.startsWith('# ')) lineClass += " live-h1";
+      else if (text.startsWith('## ')) lineClass += " live-h2";
+      else if (text.startsWith('### ')) lineClass += " live-h3";
+      else if (text.startsWith('> ')) lineClass += " live-blockquote";
+      
+      if (el.className !== lineClass) {
+        el.className = lineClass;
       }
-    }
+    });
 
-    const updatedMarkdown = htmlToMarkdown(e.currentTarget);
-    onChange(updatedMarkdown);
+    const rawMarkdown = container.innerText || '';
+    onChange(rawMarkdown.replace(/\r\n/g, '\n'));
   };
 
   const handleBlur = () => {
