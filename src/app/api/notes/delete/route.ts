@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { deleteItem } from '@/lib/notes';
+import { deleteNodeMetadata } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
@@ -14,9 +15,11 @@ export async function POST(request: Request) {
     }
 
     deleteItem(username, path);
+    deleteNodeMetadata(username, path);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Failed to delete item:', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
 }
+

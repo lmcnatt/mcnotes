@@ -861,3 +861,14 @@ body {
   padding-left: 20px;
 }
 
+.emoji-select-btn {
+  transition: transform 0.1s ease, background-color 0.15s;
+  cursor: pointer;
+}
+
+.emoji-select-btn:hover {
+  background-color: var(--bg-app) !important;
+  transform: scale(1.15);
+}
+
+

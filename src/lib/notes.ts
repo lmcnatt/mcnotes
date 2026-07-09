@@ -8,6 +8,7 @@ export interface FileNode {
   relativePath: string;
   isDirectory: boolean;
   size?: number;
+  emoji?: string;
   children?: FileNode[];
 }
 
@@ -32,7 +33,11 @@ export function resolveUserPath(username: string, relativePath: string): string 
   return resolvedPath;
 }
 
-export function getNotesTree(username: string, currentDir: string = ''): FileNode[] {
+export function getNotesTree(
+  username: string, 
+  currentDir: string = '', 
+  metadata: Record<string, { emoji: string }> = {}
+): FileNode[] {
   const userDir = getUserDir(username);
   const targetDir = path.join(userDir, currentDir);
   
@@ -50,10 +55,11 @@ export function getNotesTree(username: string, currentDir: string = ''): FileNod
       name: entry.name,
       relativePath: relPath,
       isDirectory: entry.isDirectory(),
+      emoji: metadata[relPath]?.emoji
     };
     
     if (entry.isDirectory()) {
-      node.children = getNotesTree(username, relPath);
+      node.children = getNotesTree(username, relPath, metadata);
       // Sort: directories first, then alphabetically
       nodes.push(node);
     } else if (entry.isFile() && entry.name.endsWith('.md')) {

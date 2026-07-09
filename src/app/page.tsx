@@ -324,6 +324,23 @@ export default function Dashboard() {
     }
   };
 
+  const handleSetEmoji = async (path: string, emoji: string) => {
+    try {
+      const res = await fetch('/api/notes/metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, emoji }),
+      });
+      if (res.ok) {
+        await fetchTree();
+      } else {
+        alert('Failed to set folder icon');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const getActiveFolder = (): string => {
     if (!selectedPath) return '';
     
@@ -486,6 +503,7 @@ export default function Dashboard() {
                 setTargetPath(path);
                 setModalType('delete');
               }}
+              onSetEmoji={handleSetEmoji}
             />
           </>
         )}

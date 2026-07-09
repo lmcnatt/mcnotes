@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getNotesTree, createItem } from '@/lib/notes';
+import { getAllNodeMetadata } from '@/lib/db';
 
 export async function GET(request: Request) {
   try {
@@ -8,7 +9,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const tree = getNotesTree(username);
+    const metadata = getAllNodeMetadata(username);
+    const tree = getNotesTree(username, '', metadata);
     return NextResponse.json({ tree, username });
   } catch (error: any) {
     console.error('Failed to get notes tree:', error);

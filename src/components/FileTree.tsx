@@ -8,9 +8,11 @@ import {
   Trash, 
   Edit3, 
   ChevronRight, 
-  ChevronDown 
+  ChevronDown,
+  Smile 
 } from 'lucide-react';
 import { FileNode } from '@/lib/notes';
+import { useEffect } from 'react';
 
 interface FileTreeProps {
   tree: FileNode[];
@@ -19,10 +21,14 @@ interface FileTreeProps {
   onCreateItem: (type: 'file' | 'directory', parentPath: string) => void;
   onRenameItem: (oldPath: string, newPath: string) => void;
   onDeleteItem: (path: string) => void;
+  onSetEmoji?: (path: string, emoji: string) => void;
 }
 
-const getFolderIcon = (name: string, isExpanded: boolean) => {
-  const match = name.match(/^(\p{Extended_Pictographic})/u);
+const getFolderIcon = (node: FileNode, isExpanded: boolean) => {
+  if (node.emoji) {
+    return <span style={{ fontSize: '16px', marginRight: '4px', display: 'inline-flex', alignItems: 'center' }}>{node.emoji}</span>;
+  }
+  const match = node.name.match(/^(\p{Extended_Pictographic})/u);
   if (match) {
     return <span style={{ fontSize: '16px', marginRight: '4px', display: 'inline-flex', alignItems: 'center' }}>{match[1]}</span>;
   }
@@ -47,12 +53,40 @@ export default function FileTree({
   onSelect,
   onCreateItem,
   onRenameItem,
-  onDeleteItem
+  onDeleteItem,
+  onSetEmoji
 }: FileTreeProps) {
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [draggedOverPath, setDraggedOverPath] = useState<string | null>(null);
+  const [activeEmojiPickerPath, setActiveEmojiPickerPath] = useState<string | null>(null);
+  const [pickerPosition, setPickerPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleGlobalClick = () => {
+      setActiveEmojiPickerPath(null);
+    };
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, []);
+
+  const toggleEmojiPicker = (path: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (activeEmojiPickerPath === path) {
+      setActiveEmojiPickerPath(null);
+    } else {
+      setActiveEmojiPickerPath(path);
+      setPickerPosition({ x: e.clientX, y: e.clientY });
+    }
+  };
+
+  const handleSelectEmoji = (path: string, emoji: string) => {
+    if (onSetEmoji) {
+      onSetEmoji(path, emoji);
+    }
+    setActiveEmojiPickerPath(null);
+  };
 
   const handleDragStart = (e: React.DragEvent, path: string) => {
     e.dataTransfer.setData('text/plain', path);
@@ -162,7 +196,7 @@ export default function FileTree({
               <ChevronRight size={16} className="text-muted" />
             )}
             
-            {getFolderIcon(node.name, isExpanded)}
+            {getFolderIcon(node, isExpanded)}
             
             {isEditing ? (
               <input
@@ -196,6 +230,13 @@ export default function FileTree({
                 onClick={() => onCreateItem('directory', node.relativePath)}
               >
                 <FolderPlus size={14} />
+              </button>
+              <button 
+                className="node-action-btn"
+                title="Select Emoji"
+                onClick={(e) => toggleEmojiPicker(node.relativePath, e)}
+              >
+                <Smile size={14} />
               </button>
               <button 
                 className="node-action-btn"
@@ -287,6 +328,46 @@ export default function FileTree({
         </div>
       ) : (
         tree.map(node => renderNode(node))
+      )}
+
+      {activeEmojiPickerPath && (
+        <div 
+          className="emoji-picker-popup"
+          style={{
+            position: 'fixed',
+            left: `${Math.min(window.innerWidth - 220, pickerPosition.x)}px`,
+            top: `${Math.min(window.innerHeight - 150, pickerPosition.y + 10)}px`,
+            zIndex: 2000,
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            padding: '10px',
+            boxShadow: 'var(--shadow)',
+            width: '200px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '6px',
+            justifyContent: 'center'
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {['📖', '📚', '✍️', '📂', '💡', '📝', '📓', '🎨', '🎭', '🎬', '🚀', '📅', '📌', '📁', '❤️', '🔍', '⭐', '🔥'].map(emoji => (
+            <button
+              key={emoji}
+              style={{ fontSize: '20px', padding: '4px', borderRadius: '4px' }}
+              onClick={() => handleSelectEmoji(activeEmojiPickerPath, emoji)}
+              className="emoji-select-btn"
+            >
+              {emoji}
+            </button>
+          ))}
+          <button
+            style={{ width: '100%', fontSize: '0.8rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border)', paddingTop: '6px', marginTop: '4px' }}
+            onClick={() => handleSelectEmoji(activeEmojiPickerPath, '')}
+          >
+            Remove Icon
+          </button>
+        </div>
       )}
     </div>
   );

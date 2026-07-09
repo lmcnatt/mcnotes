@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { renameItem } from '@/lib/notes';
+import { updateMetadataPaths } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
@@ -14,9 +15,11 @@ export async function POST(request: Request) {
     }
 
     const finalPath = renameItem(username, oldPath, newPath);
+    updateMetadataPaths(username, oldPath, finalPath);
     return NextResponse.json({ success: true, relativePath: finalPath });
   } catch (error: any) {
     console.error('Failed to rename item:', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
 }
+
