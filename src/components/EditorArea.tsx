@@ -110,6 +110,17 @@ export default function EditorArea({
   const [mode, setMode] = useState<EditMode>('split');
   const [fontStyle, setFontStyle] = useState<FontStyle>('serif');
   const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('notes-font-style');
+    if (saved) {
+      setFontStyle(saved as FontStyle);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('notes-font-style', fontStyle);
+  }, [fontStyle]);
   const [wordGoal, setWordGoal] = useState<number>(0);
   const [showGoalDialog, setShowGoalDialog] = useState(false);
   const [goalInput, setGoalInput] = useState('');
