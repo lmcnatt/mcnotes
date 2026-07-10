@@ -130,8 +130,8 @@ export default function EditorArea({
             {saveStatus === 'unsaved' && 'Unsaved changes'}
           </span>
 
-          {/* Goal Setting */
-          <button 
+          {/* Goal Setting */}
+          <button
             className="p-2 text-text-muted hover:text-text-main hover:bg-card-hover rounded-lg transition" 
             title="Set Word Goal"
             onClick={() => {
