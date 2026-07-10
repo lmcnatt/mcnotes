@@ -778,6 +778,7 @@ export default function Dashboard() {
             <div className="text-4xl font-bold font-serif text-border-theme mb-4 tracking-widest uppercase">McNatt Notes</div>
             <p className="text-sm text-text-muted max-w-sm leading-relaxed">Select a note from the sidebar or create a new one to start writing.</p>
           </div>
+        )}
       </div>
 
       {/* Dialog Modals */}
