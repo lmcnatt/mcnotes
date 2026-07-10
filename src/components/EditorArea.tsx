@@ -4,10 +4,8 @@ import remarkGfm from 'remark-gfm';
 import { 
   Eye, 
   Columns, 
-  FileEdit, 
-  Settings, 
-  Target,
-  Type
+  FileEdit,
+  Target
 } from 'lucide-react';
 
 interface EditorAreaProps {
@@ -19,9 +17,6 @@ interface EditorAreaProps {
 }
 
 type EditMode = 'source' | 'split' | 'live';
-type FontStyle = 'sans' | 'serif';
-
-
 
 export default function EditorArea({
   notePath,
@@ -32,19 +27,7 @@ export default function EditorArea({
 }: EditorAreaProps) {
   const [content, setContent] = useState(initialContent);
   const [mode, setMode] = useState<EditMode>('split');
-  const [fontStyle, setFontStyle] = useState<FontStyle>('serif');
   const [isFocused, setIsFocused] = useState(false);
-
-  useEffect(() => {
-    const saved = localStorage.getItem('notes-font-style');
-    if (saved) {
-      setFontStyle(saved as FontStyle);
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('notes-font-style', fontStyle);
-  }, [fontStyle]);
   const [wordGoal, setWordGoal] = useState<number>(0);
   const [showGoalDialog, setShowGoalDialog] = useState(false);
   const [goalInput, setGoalInput] = useState('');
@@ -147,16 +130,7 @@ export default function EditorArea({
             {saveStatus === 'unsaved' && 'Unsaved changes'}
           </span>
 
-          {/* Font Toggle */}
-          <button 
-            className="p-2 text-text-muted hover:text-text-main hover:bg-card-hover rounded-lg transition" 
-            title="Toggle Font Style (Serif/Sans)"
-            onClick={() => setFontStyle(prev => prev === 'sans' ? 'serif' : 'sans')}
-          >
-            <Type size={16} />
-          </button>
-
-          {/* Goal Setting */}
+          {/* Goal Setting */
           <button 
             className="p-2 text-text-muted hover:text-text-main hover:bg-card-hover rounded-lg transition" 
             title="Set Word Goal"
@@ -213,7 +187,7 @@ export default function EditorArea({
           <div className="flex-1 h-full flex flex-col">
             <textarea
               ref={textareaRef}
-              className={`w-full h-full resize-none p-10 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto ${fontStyle === 'serif' ? 'font-serif' : 'font-sans'}`}
+              className="w-full h-full resize-none p-6 sm:p-10 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto"
               value={content}
               onChange={handleChange}
               placeholder="Start writing in markdown..."
@@ -224,17 +198,17 @@ export default function EditorArea({
 
         {mode === 'split' && (
           <div className="flex flex-col lg:flex-row flex-1 w-full h-full overflow-hidden">
-            <div className="flex-1 h-1/2 lg:h-full flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 h-1/2 lg:h-full flex flex-col overflow-hidden">
               <textarea
                 ref={textareaRef}
-                className={`w-full h-full resize-none p-10 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto ${fontStyle === 'serif' ? 'font-serif' : 'font-sans'}`}
+                className="w-full h-full resize-none p-6 sm:p-10 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto"
                 value={content}
                 onChange={handleChange}
                 placeholder="Start writing in markdown..."
                 autoFocus
               />
             </div>
-            <div className="flex-1 h-1/2 lg:h-full overflow-y-auto p-10 border-t lg:border-t-0 lg:border-l border-border-theme bg-card-bg">
+            <div className="flex-1 min-h-0 h-1/2 lg:h-full overflow-y-auto p-6 sm:p-10 border-t lg:border-t-0 lg:border-l border-border-theme bg-card-bg">
               <div className="markdown-body">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                   {preprocessMarkdown(content)}
@@ -253,7 +227,7 @@ export default function EditorArea({
             {isFocused ? (
               <textarea
                 ref={textareaRef}
-                className={`w-full h-full resize-none p-0 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto ${fontStyle === 'serif' ? 'font-serif' : 'font-sans'}`}
+                className="w-full h-full resize-none p-0 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto"
                 value={content}
                 onChange={handleChange}
                 onBlur={() => setIsFocused(false)}
