@@ -642,7 +642,7 @@ export default function Dashboard() {
                 height={52}
                 className="h-[3.2rem] w-[3.2rem] rounded-2xl object-cover border border-border-theme/70 shadow-sm"
               />
-              <span className="text-[2.28rem] leading-none tracking-[-0.05em] font-semibold text-[#6f4728] [font-family:var(--font-logo)]">Notes</span>
+              <span className="text-[2.28rem] leading-none tracking-[-0.05em] font-semibold text-[#3c2e24] [font-family:var(--font-logo)] -translate-y-[2px] transform">Notes</span>
             </div>
             <div className="flex gap-1">
               <button 
@@ -950,7 +950,7 @@ export default function Dashboard() {
               className="mb-2 w-full max-w-[18rem] sm:max-w-[22rem] h-auto"
               priority
             />
-            <div className="text-4xl sm:text-5xl font-semibold text-[#6f4728] [font-family:var(--font-logo)] leading-none mb-4">McNotes</div>
+            <div className="text-4xl sm:text-5xl font-semibold text-[#3c2e24] [font-family:var(--font-logo)] leading-none mb-4">McNotes</div>
             <p className="text-sm text-text-muted max-w-sm leading-relaxed">Select a note from the sidebar or create a new one to start writing.</p>
           </div>
         )}
