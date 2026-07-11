@@ -439,6 +439,17 @@ export default function Dashboard() {
     }
   };
 
+  const handleReturnToHome = async () => {
+    if (saveStatus === 'unsaved' && selectedPath) {
+      await saveNoteContent(selectedPath, latestContent.current);
+    }
+
+    setSelectedPath(null);
+    localStorage.removeItem('notes-selected-path');
+    setNoteContent('');
+    setSidebarOpen(false);
+  };
+
   // WikiLink resolution
   const handleSelectWikiLink = async (noteName: string) => {
     // 1. Search in existing file tree for noteName.md
@@ -634,7 +645,12 @@ export default function Dashboard() {
       >
         <div className="flex flex-col p-4 border-b border-border-theme bg-sidebar-bg gap-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-[0.04rem] min-w-0">
+            <button
+              type="button"
+              onClick={handleReturnToHome}
+              className="flex items-center gap-[0.04rem] min-w-0 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+              title="Return to home"
+            >
               <Image
                 src="/branding/logos/mcnotes-app-badge.png"
                 alt="McNotes badge"
@@ -643,7 +659,7 @@ export default function Dashboard() {
                 className="h-[3.2rem] w-[3.2rem] rounded-2xl object-cover border border-border-theme/70 shadow-sm"
               />
               <span className="text-[2.28rem] leading-none tracking-[-0.05em] font-semibold text-[#433328] [font-family:var(--font-logo)] -translate-y-[2px] transform">Notes</span>
-            </div>
+            </button>
             <div className="flex gap-1">
               <button 
                 className={`p-1.5 rounded-lg text-text-muted hover:text-text-main hover:bg-card-hover transition ${theme === 'sepia' ? 'bg-card-bg text-accent border border-border-theme/40 shadow-sm' : ''}`}
