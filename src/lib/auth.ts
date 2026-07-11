@@ -1,9 +1,26 @@
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mcnatt-notes-super-secret-key-change-me';
+// This module runs in both the Node and Edge (middleware) runtimes, so it must
+// only rely on `process.env` — never the Node `fs`/`path` APIs.
+const JWT_SECRET = process.env.JWT_SECRET;
+const INSECURE_DEFAULT = 'mcnatt-notes-super-secret-key-change-me';
+
+if (process.env.NODE_ENV === 'production' && (!JWT_SECRET || JWT_SECRET === INSECURE_DEFAULT)) {
+  throw new Error(
+    'JWT_SECRET must be set to a strong, unique value in production. ' +
+      'Set the JWT_SECRET environment variable (the container entrypoint can generate one automatically).'
+  );
+}
+
+if (!JWT_SECRET) {
+  console.warn(
+    '[auth] JWT_SECRET is not set — using an insecure development fallback. Do NOT use this in production.'
+  );
+}
+
 const encoder = new TextEncoder();
-const secretKey = encoder.encode(JWT_SECRET);
+const secretKey = encoder.encode(JWT_SECRET || 'dev-only-insecure-secret');
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = await bcrypt.genSalt(10);

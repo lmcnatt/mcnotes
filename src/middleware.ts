@@ -8,11 +8,13 @@ export async function middleware(request: NextRequest) {
   // Define public paths
   const isPublicPath = path === '/login' || path === '/register';
   const isAuthApi = path.startsWith('/api/auth');
+  const isHealthCheck = path === '/api/health';
 
-  // Skip auth checks for static assets, public files, and auth API routes
+  // Skip auth checks for static assets, public files, health checks, and auth API routes
   if (
     path.startsWith('/_next') ||
     path.startsWith('/favicon.ico') ||
+    isHealthCheck ||
     isAuthApi
   ) {
     return NextResponse.next();
@@ -55,6 +57,7 @@ export const config = {
     '/',
     '/login',
     '/register',
+    '/settings',
     '/api/:path*',
   ],
 };

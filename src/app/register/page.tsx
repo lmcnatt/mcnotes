@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -11,7 +11,19 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [allowRegistration, setAllowRegistration] = useState<boolean | null>(null);
+  const [isFirstRun, setIsFirstRun] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    fetch('/api/auth/registration-status')
+      .then((res) => res.json())
+      .then((data) => {
+        setAllowRegistration(!!data.allowRegistration);
+        setIsFirstRun(!data.hasUsers);
+      })
+      .catch(() => setAllowRegistration(false));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,8 +78,14 @@ export default function RegisterPage() {
             />
             <span className="text-[2.28rem] leading-none tracking-[-0.05em] font-semibold text-[#433328] [font-family:var(--font-logo)] -translate-y-[2px] transform">Notes</span>
           </div>
-          <h1 className="text-xl font-semibold text-[var(--text-main)]">Create Account</h1>
-          <p className="text-sm text-[var(--text-muted)]">Start writing your outlines and stories</p>
+          <h1 className="text-xl font-semibold text-[var(--text-main)]">
+            {isFirstRun ? 'Create Admin Account' : 'Create Account'}
+          </h1>
+          <p className="text-sm text-[var(--text-muted)]">
+            {isFirstRun
+              ? 'This first account will be the instance administrator'
+              : 'Start writing your outlines and stories'}
+          </p>
         </div>
 
         {/* Error */}
@@ -77,6 +95,18 @@ export default function RegisterPage() {
           </div>
         )}
 
+        {allowRegistration === false ? (
+          <div className="flex flex-col gap-4 text-center">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-app)] px-4 py-4 text-sm text-[var(--text-muted)]">
+              Registration is currently disabled on this instance. Please contact the administrator
+              for access.
+            </div>
+            <Link href="/login" className="font-semibold text-[var(--accent)] hover:underline">
+              Back to sign in
+            </Link>
+          </div>
+        ) : (
+          <>
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
@@ -138,6 +168,8 @@ export default function RegisterPage() {
             Sign in
           </Link>
         </p>
+          </>
+        )}
 
       </div>
     </div>

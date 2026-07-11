@@ -1,0 +1,23 @@
+services:
+  mcnotes:
+    # Pull the pre-built image from GitHub Container Registry.
+    # Replace OWNER with your GitHub username/org, or use `build: .` to build locally.
+    image: ghcr.io/OWNER/notes:latest
+    # build: .
+    container_name: mcnotes
+    restart: unless-stopped
+    ports:
+      - "3010:3010"
+    environment:
+      # A strong secret is auto-generated and persisted to the data volume on
+      # first run. Set it explicitly to control it yourself (recommended).
+      # JWT_SECRET: "change-me-to-a-long-random-string"
+      #
+      # Set to "true" to allow public self-registration from the start.
+      # The very first account is always allowed and becomes the admin.
+      ALLOW_REGISTRATION: "false"
+    volumes:
+      - mcnotes-data:/data
+
+volumes:
+  mcnotes-data:

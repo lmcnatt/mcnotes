@@ -1,16 +1,14 @@
 import Database from 'better-sqlite3';
-import path from 'path';
 import fs from 'fs';
+import { DATA_DIR, DB_PATH, ALLOW_REGISTRATION_DEFAULT } from './config';
 
-const DB_DIR = '/mnt/mcnatt-storage/notes';
-const DB_PATH = path.join(DB_DIR, 'users.db');
-
-// Ensure DB directory exists
-if (!fs.existsSync(DB_DIR)) {
-  fs.mkdirSync(DB_DIR, { recursive: true });
+// Ensure the data directory exists before opening the database.
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 const db = new Database(DB_PATH);
+db.pragma('journal_mode = WAL');
 
 // Initialize DB schema
 db.exec(`
@@ -18,6 +16,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -28,12 +27,30 @@ db.exec(`
     emoji TEXT NOT NULL,
     UNIQUE(username, path)
   );
+
+  CREATE TABLE IF NOT EXISTS instance_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
+
+// Lightweight migration: add is_admin to pre-existing databases.
+const userColumns = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+if (!userColumns.some((c) => c.name === 'is_admin')) {
+  db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+}
+
+// Seed the initial registration setting once, from the environment default.
+const seedRegistration = db.prepare(
+  'INSERT OR IGNORE INTO instance_settings (key, value) VALUES (?, ?)'
+);
+seedRegistration.run('allow_registration', ALLOW_REGISTRATION_DEFAULT ? '1' : '0');
 
 export interface User {
   id: number;
   username: string;
   password?: string;
+  is_admin: number;
   created_at: string;
 }
 
@@ -43,14 +60,40 @@ export function getUserByUsername(username: string): User | null {
   return (user as User) || null;
 }
 
-export function createUser(username: string, passwordHash: string): User {
-  const stmt = db.prepare('INSERT INTO users (username, password) VALUES (?, ?)');
-  const info = stmt.run(username, passwordHash);
+export function getUserCount(): number {
+  const row = db.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number };
+  return row.count;
+}
+
+export function createUser(username: string, passwordHash: string, isAdmin = false): User {
+  const stmt = db.prepare('INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)');
+  const info = stmt.run(username, passwordHash, isAdmin ? 1 : 0);
   return {
     id: info.lastInsertRowid as number,
     username,
+    is_admin: isAdmin ? 1 : 0,
     created_at: new Date().toISOString()
   };
+}
+
+export function getSetting(key: string): string | null {
+  const row = db.prepare('SELECT value FROM instance_settings WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined;
+  return row ? row.value : null;
+}
+
+export function setSetting(key: string, value: string): void {
+  db.prepare(
+    `INSERT INTO instance_settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run(key, value);
+}
+
+export function isRegistrationAllowed(): boolean {
+  // The very first account may always be created; it becomes the admin.
+  if (getUserCount() === 0) return true;
+  return getSetting('allow_registration') === '1';
 }
 
 export function setNodeEmoji(username: string, path: string, emoji: string): void {

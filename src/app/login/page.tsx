@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -10,7 +10,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [allowRegistration, setAllowRegistration] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    fetch('/api/auth/registration-status')
+      .then((res) => res.json())
+      .then((data) => setAllowRegistration(!!data.allowRegistration))
+      .catch(() => setAllowRegistration(false));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,12 +121,14 @@ export default function LoginPage() {
         </form>
 
         {/* Footer link */}
-        <p className="text-center text-sm text-[var(--text-muted)]">
-          Don&apos;t have an account?{' '}
-          <Link href="/register" className="font-semibold text-[var(--accent)] hover:underline">
-            Create account
-          </Link>
-        </p>
+        {allowRegistration && (
+          <p className="text-center text-sm text-[var(--text-muted)]">
+            Don&apos;t have an account?{' '}
+            <Link href="/register" className="font-semibold text-[var(--accent)] hover:underline">
+              Create account
+            </Link>
+          </p>
+        )}
 
       </div>
     </div>

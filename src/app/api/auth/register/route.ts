@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
-import { getUserByUsername, createUser } from '@/lib/db';
+import { getUserByUsername, createUser, getUserCount, isRegistrationAllowed } from '@/lib/db';
 import { hashPassword, signJWT } from '@/lib/auth';
-import fs from 'fs';
-import path from 'path';
+import { getUserDir } from '@/lib/notes';
 
 export async function POST(request: Request) {
   try {
@@ -10,6 +9,16 @@ export async function POST(request: Request) {
 
     if (!username || !password || username.trim() === '' || password.trim() === '') {
       return NextResponse.json({ error: 'Username and password are required' }, { status: 400 });
+    }
+
+    // The first account bootstraps the instance and becomes the admin.
+    // After that, self-registration must be explicitly enabled.
+    const isFirstUser = getUserCount() === 0;
+    if (!isRegistrationAllowed()) {
+      return NextResponse.json(
+        { error: 'Registration is currently disabled on this instance.' },
+        { status: 403 }
+      );
     }
 
     const cleanUsername = username.trim().toLowerCase();
@@ -20,15 +29,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Username already exists' }, { status: 400 });
     }
 
-    // Hash password & create user
+    // Hash password & create user (first user is granted admin rights)
     const passwordHash = await hashPassword(password);
-    createUser(cleanUsername, passwordHash);
+    createUser(cleanUsername, passwordHash, isFirstUser);
 
     // Create user's notes directory
-    const userNotesDir = path.join('/mnt/mcnatt-storage/notes/users', cleanUsername);
-    if (!fs.existsSync(userNotesDir)) {
-      fs.mkdirSync(userNotesDir, { recursive: true });
-    }
+    getUserDir(cleanUsername);
 
     // Sign JWT and set cookie
     const token = await signJWT({ username: cleanUsername });
