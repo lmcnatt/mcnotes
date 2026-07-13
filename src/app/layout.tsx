@@ -4,7 +4,7 @@ import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
   applicationName: "McNotes",
-  title: "McNotes - Outlining & Markdown Writing",
+  title: "McNotes",
   description: "A cozy, distraction-free markdown editor for writing books, novels, and outlines.",
   appleWebApp: {
     capable: true,

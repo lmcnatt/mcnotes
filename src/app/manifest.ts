@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "McNotes - Outlining & Markdown Writing",
+    name: "McNotes",
     short_name: "McNotes",
     description:
       "A cozy, distraction-free markdown editor for writing books, novels, and outlines.",
