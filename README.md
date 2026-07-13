@@ -37,7 +37,6 @@ Stop it anytime: `docker stop mcnotes`
 ```bash
 mkdir mcnotes && cd mcnotes
 curl -O https://raw.githubusercontent.com/lmcnatt/mcnotes/main/docker-compose.yml
-curl -O https://raw.githubusercontent.com/lmcnatt/mcnotes/main/Caddyfile
 ```
 
 Or clone the repo:
@@ -53,36 +52,54 @@ docker compose up -d
 
 Open <http://localhost:3010> and create your first account. **This account becomes the admin.**
 
-**Step 3: Optional — expose to the internet with a domain**
+**Step 3: Optional — expose via a reverse proxy**
 
-If you want to access McNotes from anywhere using a domain (like `notes.example.com`):
+McNotes listens on port `3010`. Point any reverse proxy at `http://localhost:3010`.
 
-**3a. Edit docker-compose.yml**
+**nginx**
 
-Uncomment the `caddy` service (lines 21–44) and set your domain:
-
-```yaml
-caddy:
-  # ... uncomment this section
-  environment:
-    DOMAIN: notes.example.com  # Change to your domain
+```nginx
+server {
+    listen 80;
+    server_name notes.example.com;
+    location / {
+        proxy_pass http://localhost:3010;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 ```
 
-**3b. Point your domain's DNS to your server**
+Add HTTPS: `sudo certbot --nginx -d notes.example.com`
 
-In your domain registrar (GoDaddy, Cloudflare, Route53, etc.), create an **A record**:
+**Apache2**
+
+Enable modules first: `sudo a2enmod proxy proxy_http`
+
+```apacheconf
+<VirtualHost *:80>
+    ServerName notes.example.com
+    ProxyPreserveHost On
+    ProxyPass / http://localhost:3010/
+    ProxyPassReverse / http://localhost:3010/
+</VirtualHost>
 ```
-notes.example.com  A  <your-server-ip>
+
+Add HTTPS: `sudo certbot --apache -d notes.example.com`
+
+**Caddy** (standalone)
+
+```
+notes.example.com {
+    reverse_proxy localhost:3010
+}
 ```
 
-**3c. Restart**
+Caddy auto-provisions HTTPS — no certbot step needed.
 
-```bash
-docker compose down
-docker compose up -d
-```
-
-Caddy automatically generates HTTPS certificates (Let's Encrypt). Your app is now at `https://notes.example.com` with auto-renewing certificates.
+**Traefik, HAProxy, etc.** — proxy `http://localhost:3010`, standard config for each.
 
 ---
 
@@ -258,11 +275,10 @@ docker compose -f docker-compose.yml up -d  # uses local image if built
 
 All settings are optional. Set them in the `environment:` section of `docker-compose.yml` (uncomment the relevant lines).
 
-| Option               | Default   | What it does                                                       |
-| -------------------- | --------- | ------------------------------------------------------------------ |
+| Option               | Default   | What it does                                                          |
+| -------------------- | --------- | --------------------------------------------------------------------- |
 | `JWT_SECRET`         | auto-gen  | Secret for session tokens. Auto-generated and persisted on first run. |
-| `ALLOW_REGISTRATION` | `"false"` | Allow public self-registration. First account always allowed.      |
-| `DOMAIN` (Caddy)     | `localhost` | Your domain for HTTPS. Only used if the Caddy service is enabled. |
+| `ALLOW_REGISTRATION` | `"false"` | Allow public self-registration. First account always allowed.         |
 
 ### Managing users
 

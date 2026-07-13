@@ -8,35 +8,5 @@ services:
     volumes:
       - mcnotes-data:/data
 
-  # Optional: Caddy reverse proxy for automatic HTTPS.
-  # To enable:
-  #  1. Uncomment the caddy service below (remove the # from each line)
-  #  2. Set your domain in the DOMAIN environment variable
-  #  3. Point your domain's DNS A record to this server's IP
-  #  4. Run: docker compose up -d
-  #
-  # Caddy will auto-generate and renew HTTPS certificates (Let's Encrypt).
-  # Works on any platform (Linux, macOS, Windows) and with any domain registrar.
-  #
-  # caddy:
-  #   image: caddy:latest
-  #   container_name: mcnotes-caddy
-  #   restart: unless-stopped
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   environment:
-  #     # Set this to your domain (e.g., notes.example.com)
-  #     DOMAIN: localhost
-  #   volumes:
-  #     - ./Caddyfile:/etc/caddy/Caddyfile
-  #     - caddy-data:/data
-  #     - caddy-config:/config
-  #   depends_on:
-  #     - mcnotes
-
 volumes:
   mcnotes-data:
-  # caddy-data:
-  # caddy-config:
-
