@@ -1,9 +1,6 @@
 services:
   mcnotes:
-    # Pull the pre-built image from GitHub Container Registry.
-    # Replace OWNER with your GitHub username/org, or use `build: .` to build locally.
-    image: ghcr.io/OWNER/notes:latest
-    # build: .
+    image: ghcr.io/lmcnatt/notes:latest
     container_name: mcnotes
     restart: unless-stopped
     ports:
