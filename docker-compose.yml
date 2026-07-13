@@ -1,6 +1,6 @@
 services:
   mcnotes:
-    image: ghcr.io/lmcnatt/notes:latest
+    image: ghcr.io/lmcnatt/mcnotes:latest
     container_name: mcnotes
     restart: unless-stopped
     ports:

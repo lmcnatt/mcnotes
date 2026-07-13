@@ -1,0 +1,10 @@
+# Code owners for McNotes.
+#
+# These owners are automatically requested for review on every pull request
+# and — when "Require review from Code Owners" branch protection is enabled —
+# their approval is required before changes can be merged into a protected
+# branch. This keeps the public repository open to contributions while ensuring
+# only trusted maintainers can approve and merge modifications.
+
+# Default owner for everything in the repository.
+* @lmcnatt

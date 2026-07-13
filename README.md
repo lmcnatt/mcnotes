@@ -21,7 +21,7 @@ docker run -d \
   --name mcnotes \
   -p 3010:3010 \
   -v mcnotes-data:/data \
-  ghcr.io/lmcnatt/notes:latest
+  ghcr.io/lmcnatt/mcnotes:latest
 ```
 
 Open <http://localhost:3010>, create your first account (becomes admin), and start writing. Done.
@@ -36,13 +36,13 @@ Stop it anytime: `docker stop mcnotes`
 
 ```bash
 mkdir mcnotes && cd mcnotes
-curl -O https://raw.githubusercontent.com/lmcnatt/notes/main/docker-compose.yml
-curl -O https://raw.githubusercontent.com/lmcnatt/notes/main/Caddyfile
+curl -O https://raw.githubusercontent.com/lmcnatt/mcnotes/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/lmcnatt/mcnotes/main/Caddyfile
 ```
 
 Or clone the repo:
 ```bash
-git clone https://github.com/lmcnatt/notes.git && cd notes
+git clone https://github.com/lmcnatt/mcnotes.git && cd mcnotes
 ```
 
 **Step 2: Start**
@@ -177,12 +177,12 @@ docker start mcnotes
 ```bash
 docker stop mcnotes
 docker rm mcnotes
-docker pull ghcr.io/lmcnatt/notes:latest
+docker pull ghcr.io/lmcnatt/mcnotes:latest
 docker run -d \
   --name mcnotes \
   -p 3010:3010 \
   -v mcnotes-data:/data \
-  ghcr.io/lmcnatt/notes:latest
+  ghcr.io/lmcnatt/mcnotes:latest
 ```
 
 **Docker compose:**
@@ -238,7 +238,7 @@ docker compose down  # to remove permanently
 docker stop mcnotes
 docker rm mcnotes
 docker volume rm mcnotes-data
-docker run -d --name mcnotes -p 3010:3010 -v mcnotes-data:/data ghcr.io/lmcnatt/notes:latest
+docker run -d --name mcnotes -p 3010:3010 -v mcnotes-data:/data ghcr.io/lmcnatt/mcnotes:latest
 ```
 
 **Docker compose:**
