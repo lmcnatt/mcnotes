@@ -5,15 +5,6 @@ services:
     restart: unless-stopped
     ports:
       - "3010:3010"
-    environment:
-      # Optional: JWT secret for session tokens.
-      # If unset, a strong secret is auto-generated and persisted to /data/.jwt_secret.
-      # To use a custom secret: JWT_SECRET=your-long-random-string-here
-      # JWT_SECRET: ""
-      
-      # Optional: Allow public user registration.
-      # The first account is always allowed and becomes admin (even if false).
-      # ALLOW_REGISTRATION: "false"
     volumes:
       - mcnotes-data:/data
 

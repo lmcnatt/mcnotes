@@ -86,24 +86,6 @@ Caddy automatically generates HTTPS certificates (Let's Encrypt). Your app is no
 
 ---
 
-## Configuration
-
-All settings are in `docker-compose.yml` environment section. Common options:
-
-| Option                | Default    | What it does                                                                  |
-| --------------------- | ---------- | ----------------------------------------------------------------------------- |
-| `JWT_SECRET`          | auto-gen   | Secret for session tokens. Auto-generated on first run if unset.              |
-| `ALLOW_REGISTRATION`  | `"false"`  | Toggle public self-registration. First account always allowed.               |
-| `DOMAIN` (Caddy)      | `localhost` | Your domain for HTTPS. Only used if Caddy service is uncommented.            |
-
-### Managing users
-
-- **First account**: Always allowed, becomes admin (even if registration is closed).
-- **Other accounts**: Gated by `ALLOW_REGISTRATION` toggle.
-- **Toggle registration**: Admin can enable/disable from **Admin Settings** (gear icon next to Logout).
-
----
-
 ## Backups
 
 Your data lives in the `mcnotes-data` Docker volume. 
@@ -269,6 +251,24 @@ Build and test the production Docker image:
 docker build -t mcnotes:local .
 docker compose -f docker-compose.yml up -d  # uses local image if built
 ```
+
+---
+
+## Advanced configuration
+
+All settings are optional. Set them in the `environment:` section of `docker-compose.yml` (uncomment the relevant lines).
+
+| Option               | Default   | What it does                                                       |
+| -------------------- | --------- | ------------------------------------------------------------------ |
+| `JWT_SECRET`         | auto-gen  | Secret for session tokens. Auto-generated and persisted on first run. |
+| `ALLOW_REGISTRATION` | `"false"` | Allow public self-registration. First account always allowed.      |
+| `DOMAIN` (Caddy)     | `localhost` | Your domain for HTTPS. Only used if the Caddy service is enabled. |
+
+### Managing users
+
+- **First account**: Always allowed, becomes admin (even if registration is off).
+- **Other accounts**: Gated by the registration toggle.
+- **Toggle registration**: Admin can enable/disable from **Admin Settings** (gear icon next to Logout).
 
 ---
 
