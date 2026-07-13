@@ -11,7 +11,12 @@ WORKDIR /app
 FROM base AS deps
 RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json* ./
-RUN npm ci
+# `--loglevel=error` suppresses npm's install-time deprecation notices for
+# transitive packages we cannot control (e.g. prebuild-install, pulled in by
+# better-sqlite3, whose latest published version is itself deprecated). The
+# native module is compiled from source in this image, so prebuild-install is
+# not functionally used.
+RUN npm ci --loglevel=error
 
 # ---- Builder -------------------------------------------------------------
 FROM base AS builder
