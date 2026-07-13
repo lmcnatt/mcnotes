@@ -10,7 +10,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # Publish under a fixed package name (mcnotes) regardless of the repository
+  # name, so the image is always ghcr.io/<owner>/mcnotes.
+  IMAGE_NAME: ${{ github.repository_owner }}/mcnotes
 
 jobs:
   build-and-push:
