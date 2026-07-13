@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import { USERS_DIR } from './config';
 
-const BASE_NOTES_DIR = '/mnt/mcnatt-storage/notes/users';
+const BASE_NOTES_DIR = USERS_DIR;
 
 export interface FileNode {
   name: string;

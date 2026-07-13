@@ -15,11 +15,13 @@ import {
   Menu,
   ChevronDown,
   Trash2,
-  FileEdit
+  FileEdit,
+  Settings
 } from 'lucide-react';
 import FileTree from '@/components/FileTree';
 import EditorArea from '@/components/EditorArea';
 import { FileNode } from '@/lib/notes';
+import Link from 'next/link';
 
 type Theme = 'sepia' | 'light' | 'dark';
 
@@ -32,6 +34,7 @@ interface SearchResult {
 export default function Dashboard() {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [username, setUsername] = useState<string>('');
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [noteContent, setNoteContent] = useState<string>('');
   const [loadingNote, setLoadingNote] = useState(false);
@@ -89,6 +92,7 @@ export default function Dashboard() {
       const data = await res.json();
       setTree(data.tree);
       setUsername(data.username);
+      setIsAdmin(!!data.isAdmin);
     } catch (err) {
       console.error('Failed to load notes tree:', err);
     } finally {
@@ -927,13 +931,24 @@ export default function Dashboard() {
             </div>
             <span className="text-xs font-semibold text-text-muted">@{username}</span>
           </div>
-          <button 
-            className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-text-muted hover:text-text-main border border-border-theme/60 hover:bg-card-bg rounded-lg transition"
-            onClick={handleLogout}
-          >
-            <LogOut size={12} />
-            Logout
-          </button>
+          <div className="flex items-center gap-1.5">
+            {isAdmin && (
+              <Link
+                href="/settings"
+                title="Admin settings"
+                className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-text-muted hover:text-text-main border border-border-theme/60 hover:bg-card-bg rounded-lg transition"
+              >
+                <Settings size={12} />
+              </Link>
+            )}
+            <button
+              className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-text-muted hover:text-text-main border border-border-theme/60 hover:bg-card-bg rounded-lg transition"
+              onClick={handleLogout}
+            >
+              <LogOut size={12} />
+              Logout
+            </button>
+          </div>
         </div>
       </div>
 

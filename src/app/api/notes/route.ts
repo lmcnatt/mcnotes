@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getNotesTree, createItem } from '@/lib/notes';
-import { getAllNodeMetadata } from '@/lib/db';
+import { getAllNodeMetadata, getUserByUsername } from '@/lib/db';
 
 export async function GET(request: Request) {
   try {
@@ -14,7 +14,8 @@ export async function GET(request: Request) {
 
     const metadata = getAllNodeMetadata(username);
     const tree = getNotesTree(username, project, metadata);
-    return NextResponse.json({ tree, username });
+    const user = getUserByUsername(username);
+    return NextResponse.json({ tree, username, isAdmin: !!user?.is_admin });
   } catch (error: any) {
     console.error('Failed to get notes tree:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
