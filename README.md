@@ -7,98 +7,139 @@ markdown files you own.
 
 - **Your data, your files** — notes are stored as ordinary `.md` files on disk.
 - **Multi-user** — first account becomes the admin; registration can be toggled.
-- **Self-hostable** — ships as a single multi-arch Docker image.
+- **Self-hostable** — single Docker image, works everywhere (Linux, macOS, Windows).
 - **Installable PWA** — works offline and installs to your device.
 
 ---
 
-## Quick start (Docker Compose)
+## Getting Started (5 minutes)
 
-1. Create a `docker-compose.yml` (or copy the one in this repo) and replace
-   `OWNER` with the GitHub owner that publishes the image:
-
-   ```yaml
-   services:
-     mcnotes:
-       image: ghcr.io/OWNER/notes:latest
-       container_name: mcnotes
-       restart: unless-stopped
-       ports:
-         - "3010:3010"
-       environment:
-         ALLOW_REGISTRATION: "false"
-       volumes:
-         - mcnotes-data:/data
-
-   volumes:
-     mcnotes-data:
-   ```
-
-2. Start it:
-
-   ```bash
-   docker compose up -d
-   ```
-
-3. Open <http://localhost:3010>, go to **Create account**, and register. The
-   **first account you create becomes the administrator.**
-
-> The first-ever account is always permitted regardless of `ALLOW_REGISTRATION`,
-> so you can always bootstrap the admin.
-
-### Quick start (docker run)
+### Step 1: Get the files
 
 ```bash
-docker run -d \
-  --name mcnotes \
-  -p 3010:3010 \
-  -v mcnotes-data:/data \
-  ghcr.io/OWNER/notes:latest
+mkdir mcnotes && cd mcnotes
+curl -O https://raw.githubusercontent.com/lmcnatt/notes/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/lmcnatt/notes/main/Caddyfile
+curl -O https://raw.githubusercontent.com/lmcnatt/notes/main/.env.example -O .env
 ```
+
+Or clone the entire repo:
+```bash
+git clone https://github.com/lmcnatt/notes.git && cd notes
+cp .env.example .env
+```
+
+### Step 2: Start locally (no domain needed)
+
+```bash
+docker compose up -d
+```
+
+Open <http://localhost:3010> and create your first account. **This account becomes the admin.**
+
+That's it. Your notes are stored in `mcnotes-data/` (visible on your machine).
+
+### Step 3: Optional — expose to the internet with a domain
+
+If you want to access McNotes from anywhere (using a domain like `notes.example.com`):
+
+**3a. Point your domain's DNS to your server**
+
+In your domain registrar (GoDaddy, Cloudflare, Route53, etc.), create an **A record**:
+```
+notes.example.com  A  <your-server-ip>
+```
+
+**3b. Enable Caddy in docker-compose.yml**
+
+Uncomment the `caddy` service (lines 20–40) and set `DOMAIN` in `.env`:
+
+```bash
+# Edit .env
+DOMAIN=notes.example.com
+
+# Or set it inline
+docker compose --env-file .env up -d
+```
+
+**3c. Restart**
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+Caddy automatically generates HTTPS certificates (Let's Encrypt). Your app is now at `https://notes.example.com` with auto-renewing certificates.
 
 ---
 
 ## Configuration
 
-All configuration is via environment variables. See [`.env.example`](.env.example).
+All settings are in `.env`. See [`.env.example`](.env.example) for all options.
 
-| Variable             | Default | Description                                                                                             |
-| -------------------- | ------- | ------------------------------------------------------------------------------------------------------- |
-| `DATA_DIR`           | `/data` | Directory for the SQLite database and per-user markdown files (mount this as a volume).                 |
-| `JWT_SECRET`         | _auto_  | Secret used to sign session cookies. **Required in production**; auto-generated and persisted if unset. |
-| `PORT`               | `3010`  | HTTP port the server listens on.                                                                        |
-| `ALLOW_REGISTRATION` | `false` | Whether public self-registration is enabled. The first account is always allowed and becomes admin.     |
+| Variable             | Default        | What it does                                                                                  |
+| -------------------- | -------------- | --------------------------------------------------------------------------------------------- |
+| `DOMAIN`             | (not set)      | If set and Caddy is enabled, exposes the app at `https://DOMAIN` with auto-HTTPS.            |
+| `ALLOW_REGISTRATION` | `false`        | Toggle public self-registration. First account is always allowed (bootstraps the admin).     |
+| `JWT_SECRET`         | auto-generated | Secret for session tokens. Auto-generated on first run if unset.                              |
+| `PORT`               | `3010`         | Port the app listens on (used by Caddy or direct access).                                    |
+| `DATA_DIR`           | `/data`        | Where the database and user files are stored (inside container).                             |
 
-### Managing registration
+### Managing users
 
-After the admin account exists, public sign-ups are controlled from
-**Admin Settings** (gear icon next to Logout) or by setting `ALLOW_REGISTRATION`.
-Enable it to let others register, then disable it again once they have joined.
+- **First account**: Always allowed, becomes admin (even if registration is closed).
+- **Other accounts**: Gated by `ALLOW_REGISTRATION` toggle.
+- **Toggle registration**: Admin can enable/disable from **Admin Settings** (gear icon next to Logout).
 
 ---
 
-## Data & backups
+## Backups
 
-Everything lives under the data volume (`/data`):
-
+Your data lives in `mcnotes-data/`. This folder contains everything:
 ```
-/data
-├── users.db        # accounts + metadata (SQLite)
-├── .jwt_secret     # auto-generated signing secret (if not provided)
-└── users/          # per-user markdown files
-    └── <username>/ ...
+mcnotes-data/
+├── users.db          # all accounts + metadata
+├── .jwt_secret       # signing key (auto-generated)
+└── users/            # markdown files for each user
+    ├── alice/...
+    └── bob/...
 ```
 
-Back up by copying the volume while the container is stopped:
+### Backup to a file (easy)
 
 ```bash
+# Stop the container
 docker compose stop
-docker run --rm -v mcnotes-data:/data -v "$PWD:/backup" alpine \
-  tar czf /backup/mcnotes-backup.tar.gz -C /data .
+
+# Create a tar file
+tar czf mcnotes-backup-$(date +%Y-%m-%d).tar.gz mcnotes-data/
+
+# Restart
 docker compose start
 ```
 
-Restore by extracting the archive back into the volume.
+### Backup to cloud (AWS S3, etc.)
+
+```bash
+# Install AWS CLI, then sync
+aws s3 sync mcnotes-data s3://my-bucket/mcnotes-backup --delete
+
+# Or use rclone for other cloud providers
+rclone sync mcnotes-data remote:mcnotes-backup
+```
+
+### Restore from backup
+
+```bash
+# Stop the container
+docker compose stop
+
+# Extract backup (creates/overwrites mcnotes-data/)
+tar xzf mcnotes-backup-2026-07-13.tar.gz
+
+# Restart
+docker compose start
+```
 
 ---
 
@@ -109,34 +150,55 @@ docker compose pull
 docker compose up -d
 ```
 
-Database schema migrations run automatically on start.
+New versions apply database migrations automatically. Your data is safe.
 
 ---
 
-## Running behind a reverse proxy
+## Troubleshooting
 
-Terminate TLS at a reverse proxy (Caddy, Nginx, Traefik) and forward to the
-container's port. Session cookies are marked `Secure` in production, so serve
-the app over HTTPS.
+### Container won't start
+```bash
+docker compose logs mcnotes
+```
+
+### Check if it's running
+```bash
+curl http://localhost:3010/api/health
+```
+
+### Stop everything
+```bash
+docker compose down
+```
+
+### Reset (delete all data!)
+```bash
+docker compose down -v
+docker volume rm mcnotes-data
+docker compose up -d
+```
 
 ---
 
-## Development
+## For developers
 
 Requires Node.js 20+.
 
 ```bash
+# Install deps
 npm install
-npm run dev        # http://localhost:3010
+
+# Start dev server (hot reload)
+npm run dev
 ```
 
-Local notes/database are written to `./data` (override with `DATA_DIR`).
+Open <http://localhost:3010>. Local data goes to `./data/`.
 
-Build a production image locally:
+Build and test the production Docker image:
 
 ```bash
 docker build -t mcnotes:local .
-docker run --rm -p 3010:3010 -v mcnotes-data:/data mcnotes:local
+docker compose -f docker-compose.yml up -d  # uses local image if built
 ```
 
 ---
@@ -144,4 +206,5 @@ docker run --rm -p 3010:3010 -v mcnotes-data:/data mcnotes:local
 ## License
 
 [MIT](LICENSE)
+
 
