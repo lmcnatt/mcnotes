@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { verifyJWT } from './lib/auth';
 
-export async function middleware(request: NextRequest) {
+// Next.js 16 renamed the `middleware` file convention to `proxy`.
+// This runs on the server before matched routes to enforce authentication.
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
   // Define public paths
