@@ -40,7 +40,8 @@ jobs:
           password: ${{ github.token }}
 
       - name: Extract metadata (tags, labels)
-        id: meta
+        id: meta_primary
+        continue-on-error: true
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ steps.prep.outputs.image }}
@@ -52,6 +53,89 @@ jobs:
             type=semver,pattern={{major}}
             type=sha
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+
+      - name: Extract metadata (retry)
+        id: meta_retry
+        if: steps.meta_primary.outcome == 'failure'
+        continue-on-error: true
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.prep.outputs.image }}
+          github-token: ${{ github.token }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+
+      - name: Resolve metadata outputs
+        id: meta
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ steps.prep.outputs.image }}
+          PRIMARY_TAGS: ${{ steps.meta_primary.outputs.tags }}
+          PRIMARY_LABELS: ${{ steps.meta_primary.outputs.labels }}
+          RETRY_TAGS: ${{ steps.meta_retry.outputs.tags }}
+          RETRY_LABELS: ${{ steps.meta_retry.outputs.labels }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -n "$PRIMARY_TAGS" ]; then
+            {
+              echo "tags<<EOF"
+              echo "$PRIMARY_TAGS"
+              echo "EOF"
+              echo "labels<<EOF"
+              echo "$PRIMARY_LABELS"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "$RETRY_TAGS" ]; then
+            {
+              echo "tags<<EOF"
+              echo "$RETRY_TAGS"
+              echo "EOF"
+              echo "labels<<EOF"
+              echo "$RETRY_LABELS"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          short_sha="${SHA:0:7}"
+          tags="$IMAGE:sha-$short_sha"
+
+          if [ "$REF_TYPE" = "branch" ]; then
+            tags="$tags\n$IMAGE:$REF_NAME"
+            if [ "$REF_NAME" = "main" ]; then
+              tags="$tags\n$IMAGE:latest"
+            fi
+          fi
+
+          if [ "$REF_TYPE" = "tag" ] && [[ "$REF_NAME" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            patch="${BASH_REMATCH[3]}"
+            tags="$tags\n$IMAGE:$major.$minor.$patch\n$IMAGE:$major.$minor\n$IMAGE:$major"
+          fi
+
+          labels="org.opencontainers.image.source=$SERVER_URL/$REPOSITORY\norg.opencontainers.image.revision=$SHA\norg.opencontainers.image.url=$SERVER_URL/$REPOSITORY/actions/runs/$RUN_ID"
+
+          {
+            echo "tags<<EOF"
+            echo -e "$tags"
+            echo "EOF"
+            echo "labels<<EOF"
+            echo -e "$labels"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v7
