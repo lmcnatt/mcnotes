@@ -42,14 +42,20 @@ export default function EditorArea({
   const undoStackRef = useRef<string[]>([]);
   const redoStackRef = useRef<string[]>([]);
 
-  // Sync content when initialContent changes (switching notes)
+  // Reset editor history when switching to a different note.
   useEffect(() => {
-    setContent(initialContent);
     undoStackRef.current = [];
     redoStackRef.current = [];
     setCanUndo(false);
     setCanRedo(false);
-  }, [initialContent, notePath]);
+  }, [notePath]);
+
+  // Sync external content updates without wiping local undo/redo history.
+  useEffect(() => {
+    if (initialContent !== content) {
+      setContent(initialContent);
+    }
+  }, [initialContent, content]);
 
   // Handle changes and trigger auto-save debounce
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -92,33 +98,22 @@ export default function EditorArea({
     setCanRedo(redoStackRef.current.length > 0);
   };
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const modifierPressed = e.ctrlKey || e.metaKey;
+    if (!modifierPressed) return;
 
-      if (!editorContainerRef.current?.contains(target)) return;
-      if (!(target instanceof HTMLTextAreaElement)) return;
+    const key = e.key.toLowerCase();
+    if (key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      handleUndo();
+      return;
+    }
 
-      const modifierPressed = e.ctrlKey || e.metaKey;
-      if (!modifierPressed) return;
-
-      const key = e.key.toLowerCase();
-      if (key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        handleUndo();
-        return;
-      }
-
-      if ((key === 'z' && e.shiftKey) || key === 'y') {
-        e.preventDefault();
-        handleRedo();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [content]);
+    if ((key === 'z' && e.shiftKey) || key === 'y') {
+      e.preventDefault();
+      handleRedo();
+    }
+  };
 
   // Preprocess WikiLinks [[Note Name]] to custom markdown anchors
   // e.g. [[My Note]] -> [My Note](#wikilink-My_Note)
@@ -281,6 +276,7 @@ export default function EditorArea({
               className="w-full h-full resize-none p-6 sm:p-10 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto"
               value={content}
               onChange={handleChange}
+              onKeyDown={handleEditorKeyDown}
               placeholder="Start writing in markdown..."
               autoFocus
             />
@@ -295,6 +291,7 @@ export default function EditorArea({
                 className="w-full h-full resize-none p-6 sm:p-10 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto"
                 value={content}
                 onChange={handleChange}
+                onKeyDown={handleEditorKeyDown}
                 placeholder="Start writing in markdown..."
                 autoFocus
               />
@@ -321,6 +318,7 @@ export default function EditorArea({
                 className="w-full h-full resize-none p-0 bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto"
                 value={content}
                 onChange={handleChange}
+                onKeyDown={handleEditorKeyDown}
                 onBlur={() => setIsFocused(false)}
                 placeholder="Start writing in markdown..."
                 autoFocus
