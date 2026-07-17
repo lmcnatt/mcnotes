@@ -186,21 +186,6 @@ export default function EditorArea({
         </a>
       );
     },
-    ul: ({ children, ...props }: any) => (
-      <ul style={{ listStyleType: 'disc', paddingLeft: '1.6em', marginBottom: '1.4em' }} {...props}>
-        {children}
-      </ul>
-    ),
-    ol: ({ children, ...props }: any) => (
-      <ol style={{ listStyleType: 'decimal', paddingLeft: '1.6em', marginBottom: '1.4em' }} {...props}>
-        {children}
-      </ol>
-    ),
-    li: ({ children, ...props }: any) => (
-      <li style={{ display: 'list-item', marginBottom: '4px' }} {...props}>
-        {children}
-      </li>
-    ),
   };
 
   // Format note path display
