@@ -904,22 +904,39 @@ export default function Dashboard() {
             </div>
 
             {/* Recursive File Tree */}
-            <FileTree
-              tree={tree}
-              selectedPath={selectedPath}
-              rootPath={activeProject}
-              onSelect={handleSelectNote}
-              onCreateItem={(type, parentPath) => {
-                setTargetPath(parentPath);
-                setModalType(type === 'file' ? 'create_file' : 'create_folder');
-              }}
-              onRenameItem={handleRenameItem}
-              onDeleteItem={(path) => {
-                setTargetPath(path);
-                setModalType('delete');
-              }}
-              onSetEmoji={handleSetEmoji}
-            />
+            {(() => {
+              // Strip the active project prefix from all node relativePaths so FileTree
+              // works with paths relative to the project root. All callbacks add it back.
+              const prefix = activeProject ? activeProject + '/' : '';
+              const stripPrefix = (p: string) => prefix && p.startsWith(prefix) ? p.slice(prefix.length) : p;
+              const addPrefix = (p: string) => prefix ? prefix + p : p;
+
+              const stripTree = (nodes: typeof tree): typeof tree =>
+                nodes.map(n => ({
+                  ...n,
+                  relativePath: stripPrefix(n.relativePath),
+                  children: n.children ? stripTree(n.children) : undefined,
+                }));
+
+              return (
+                <FileTree
+                  tree={stripTree(tree)}
+                  selectedPath={selectedPath ? stripPrefix(selectedPath) : selectedPath}
+                  rootPath=""
+                  onSelect={(path) => handleSelectNote(addPrefix(path))}
+                  onCreateItem={(type, parentPath) => {
+                    setTargetPath(addPrefix(parentPath));
+                    setModalType(type === 'file' ? 'create_file' : 'create_folder');
+                  }}
+                  onRenameItem={(oldPath, newPath) => handleRenameItem(addPrefix(oldPath), addPrefix(newPath))}
+                  onDeleteItem={(path) => {
+                    setTargetPath(addPrefix(path));
+                    setModalType('delete');
+                  }}
+                  onSetEmoji={(path, emoji) => handleSetEmoji(addPrefix(path), emoji)}
+                />
+              );
+            })()}
           </>
         )}
         
