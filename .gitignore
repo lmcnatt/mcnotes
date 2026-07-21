@@ -20,11 +20,6 @@
 # production
 /build
 
-# capacitor (regenerate native project with: npx cap add android && npx cap sync)
-/android/
-/ios/
-/resources/*.apk
-
 # misc
 .DS_Store
 *.pem

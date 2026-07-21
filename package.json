@@ -7,13 +7,9 @@
     "build": "next build",
     "start": "next start -p 3010",
     "reload": "npm run build && pm2 reload notes",
-    "lint": "eslint",
-    "android:sync": "[ -d android ] || npx cap add android; npx cap sync android",
-    "android:build": "npm run android:sync && mkdir -p resources && cd android && ./gradlew assembleRelease && $ANDROID_HOME/build-tools/35.0.0/apksigner sign --ks $MCNOTES_KEYSTORE_PATH --ks-key-alias $MCNOTES_KEY_ALIAS --ks-pass env:MCNOTES_KEYSTORE_PASS --key-pass env:MCNOTES_KEY_PASS --out ../resources/McNotes.apk app/build/outputs/apk/release/app-release-unsigned.apk && echo 'APK ready at resources/McNotes.apk'"
+    "lint": "eslint"
   },
   "dependencies": {
-    "@capacitor/android": "^7.0.0",
-    "@capacitor/core": "^7.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.13",
     "bcryptjs": "^3.0.3",
@@ -27,8 +23,6 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
-    "@capacitor/assets": "^3.0.5",
-    "@capacitor/cli": "^7.0.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "sharp": "^0.33.5",
