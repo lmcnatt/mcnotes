@@ -247,3 +247,10 @@ body {
   font-weight: 500;
   cursor: pointer;
 }
+
+.markdown-body u {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  color: inherit;
+}
+
