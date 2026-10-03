@@ -509,23 +509,54 @@ export default function EditorArea({
     }
   };
 
-  // Section 8b: Toggle checkbox in preview by source line
+  // Section 8b: Toggle checkbox in preview by source line or index fallback
   const handleToggleCheckboxAtLine = (lineNum: number) => {
     const current = contentRef.current;
     const lines = current.split('\n');
     const lineIdx = lineNum - 1;
     if (lineIdx < 0 || lineIdx >= lines.length) return;
 
-    const line = lines[lineIdx];
-    const checkboxRegex = /^(\s*(?:[-*+]|\d+[.)])\s+)\[( |x|X)\]/;
-    const match = line.match(checkboxRegex);
+    let targetIdx = lineIdx;
+    const checkboxRegex = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/;
+    if (!checkboxRegex.test(lines[targetIdx])) {
+      for (const offset of [-1, 1, -2, 2, -3, 3]) {
+        const candidate = lineIdx + offset;
+        if (candidate >= 0 && candidate < lines.length && checkboxRegex.test(lines[candidate])) {
+          targetIdx = candidate;
+          break;
+        }
+      }
+    }
+
+    const line = lines[targetIdx];
+    const match = line?.match(checkboxRegex);
     if (!match) return;
 
     const newMarker = match[2] === ' ' ? '[x]' : '[ ]';
-    lines[lineIdx] = line.replace(checkboxRegex, `$1${newMarker}`);
+    lines[targetIdx] = line.replace(checkboxRegex, `$1${newMarker}`);
     const newContent = lines.join('\n');
 
     applyEdit(newContent, undefined, undefined, { focusTextarea: false });
+  };
+
+  const handleToggleCheckboxByIndex = (index: number) => {
+    const current = contentRef.current;
+    const lines = current.split('\n');
+    const checkboxRegex = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/;
+    let count = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const match = lines[i].match(checkboxRegex);
+      if (match) {
+        if (count === index) {
+          const newMarker = match[2] === ' ' ? '[x]' : '[ ]';
+          lines[i] = lines[i].replace(checkboxRegex, `$1${newMarker}`);
+          const newContent = lines.join('\n');
+          applyEdit(newContent, undefined, undefined, { focusTextarea: false });
+          return;
+        }
+        count++;
+      }
+    }
   };
 
   // Keep callback references stable for ReactMarkdown memoized components
@@ -537,6 +568,9 @@ export default function EditorArea({
     onToggleCheckbox: (line: number) => {
       handleToggleCheckboxAtLine(line);
     },
+    onToggleCheckboxByIndex: (index: number) => {
+      handleToggleCheckboxByIndex(index);
+    },
   });
 
   useEffect(() => {
@@ -546,6 +580,9 @@ export default function EditorArea({
     };
     callbacksRef.current.onToggleCheckbox = (line: number) => {
       handleToggleCheckboxAtLine(line);
+    };
+    callbacksRef.current.onToggleCheckboxByIndex = (index: number) => {
+      handleToggleCheckboxByIndex(index);
     };
   });
 
@@ -651,27 +688,48 @@ export default function EditorArea({
       hr: ({ node, ...props }: any) => (
         <hr data-source-line={node?.position?.start?.line} {...props} />
       ),
-      input: ({ type, checked, ...props }: any) => {
+      input: (props: any) => {
+        const { type, checked } = props;
         if (type === 'checkbox') {
+          const handleToggle = (e: React.SyntheticEvent) => {
+            e.stopPropagation();
+            const target = e.target as HTMLElement;
+            const li = target.closest('li[data-source-line]');
+            const lineStr = li?.getAttribute('data-source-line');
+            if (lineStr) {
+              callbacksRef.current.onToggleCheckbox(parseInt(lineStr, 10));
+            } else {
+              const root = target.closest('.markdown-body');
+              if (root) {
+                const allCheckboxes = Array.from(root.querySelectorAll('input[type="checkbox"]'));
+                const idx = allCheckboxes.indexOf(target as HTMLInputElement);
+                if (idx !== -1) {
+                  callbacksRef.current.onToggleCheckboxByIndex(idx);
+                }
+              }
+            }
+          };
+
+          const restProps = { ...props };
+          delete restProps.type;
+          delete restProps.checked;
+          delete restProps.disabled;
+          delete restProps.node;
+
           return (
             <input
               type="checkbox"
               checked={!!checked}
-              onChange={() => {}}
+              onChange={handleToggle}
+              onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                const li = (e.target as HTMLElement).closest('li[data-source-line]');
-                const lineStr = li?.getAttribute('data-source-line');
-                if (lineStr) {
-                  callbacksRef.current.onToggleCheckbox(parseInt(lineStr, 10));
-                }
-              }}
-              {...props}
+              {...restProps}
             />
           );
         }
-        return <input type={type} {...props} />;
+        const restProps = { ...props };
+        delete restProps.node;
+        return <input {...restProps} />;
       },
     }),
     []
