@@ -79,6 +79,7 @@ const MarkdownPreview = React.memo(function MarkdownPreview({
       ref={containerRef}
       onScroll={onScroll}
       className={`overflow-y-auto ${className}`}
+      style={{ paddingBottom: `${bottomPadding}px` }}
     >
       {disableHeavyPreview ? (
         <div className="h-full flex items-center justify-center text-sm text-text-muted text-center px-4">
@@ -87,13 +88,12 @@ const MarkdownPreview = React.memo(function MarkdownPreview({
       ) : content.trim() === '' ? (
         <p className="text-text-muted italic select-none">Empty document.</p>
       ) : (
-        <div className="markdown-body min-h-full">
+        <div className="markdown-body">
           <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
             {processed}
           </ReactMarkdown>
         </div>
       )}
-      <div style={{ height: `${bottomPadding}px` }} aria-hidden="true" />
     </div>
   );
 });
@@ -737,7 +737,7 @@ export default function EditorArea({
 
   // Section 5: Measure pane clientHeight with ResizeObserver for scroll-past-the-end
   useEffect(() => {
-    const el = textareaRef.current || liveContainerRef.current;
+    const el = textareaRef.current || liveContainerRef.current || previewContainerRef.current;
     if (!el) return;
 
     const ro = new ResizeObserver((entries) => {
@@ -853,6 +853,15 @@ export default function EditorArea({
       return;
     }
 
+    const lastOffset = offsets[offsets.length - 1];
+    const anchors = previewAnchorsRef.current;
+    if (anchors && anchors.length > 0 && sourceScroll >= lastOffset) {
+      const lastAnchorTop = anchors[anchors.length - 1].top;
+      const progress = maxSource > lastOffset ? (sourceScroll - lastOffset) / (maxSource - lastOffset) : 1;
+      preview.scrollTop = Math.max(0, Math.min(maxPreview, lastAnchorTop + progress * (maxPreview - lastAnchorTop)));
+      return;
+    }
+
     let low = 0;
     let high = offsets.length - 1;
     let lineIdx = 0;
@@ -873,11 +882,6 @@ export default function EditorArea({
         : 0;
     const currentSourceLine = lineIdx + 1 + lineProgress;
 
-    const anchors = previewAnchorsRef.current;
-    if (!anchors || anchors.length === 0) {
-      preview.scrollTop = (sourceScroll / maxSource) * maxPreview;
-      return;
-    }
 
     let a1 = anchors[0];
     let a2 = anchors[anchors.length - 1];
@@ -928,6 +932,17 @@ export default function EditorArea({
       return;
     }
 
+    const offsets = sourceLineOffsetsRef.current;
+    if (offsets && offsets.length > 0) {
+      const lastAnchorTop = anchors[anchors.length - 1].top;
+      if (previewScroll >= lastAnchorTop) {
+        const lastLineOffset = offsets[offsets.length - 1];
+        const progress = maxPreview > lastAnchorTop ? (previewScroll - lastAnchorTop) / (maxPreview - lastAnchorTop) : 1;
+        textarea.scrollTop = Math.max(0, Math.min(maxSource, lastLineOffset + progress * (maxSource - lastLineOffset)));
+        return;
+      }
+    }
+
     let a1 = anchors[0];
     let a2 = anchors[anchors.length - 1];
     for (let i = 0; i < anchors.length; i++) {
@@ -942,7 +957,6 @@ export default function EditorArea({
 
     if (a1 === a2 || a2.top === a1.top) {
       const line = a1.line;
-      const offsets = sourceLineOffsetsRef.current;
       if (offsets && line - 1 < offsets.length) {
         textarea.scrollTop = offsets[line - 1];
       }
@@ -952,7 +966,6 @@ export default function EditorArea({
     const anchorProgress = (previewScroll - a1.top) / (a2.top - a1.top);
     const targetSourceLine = a1.line + anchorProgress * (a2.line - a1.line);
 
-    const offsets = sourceLineOffsetsRef.current;
     if (!offsets || offsets.length === 0) {
       textarea.scrollTop = (previewScroll / maxPreview) * maxSource;
       return;
