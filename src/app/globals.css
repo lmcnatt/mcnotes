@@ -213,12 +213,37 @@ body {
   list-style-type: square !important;
 }
 
+/* Nested lists: remove bottom margin gap before next sibling list item */
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin: 0.2em 0 0;
+}
+
 .markdown-body li {
   margin-bottom: 0.25em;
 }
 
+/* Loose lists: prevent extra paragraph spacing from distorting list item cadence */
 .markdown-body li > p {
-  margin-bottom: 0.5em;
+  margin: 0;
+}
+
+.markdown-body li > p + p {
+  margin-top: 0.5em;
+}
+
+/* Task list items: remove bullet marker and align checkbox */
+.markdown-body li.task-list-item {
+  list-style: none !important;
+  list-style-type: none !important;
+  margin-left: -1.35em;
+}
+
+.markdown-body li.task-list-item input[type="checkbox"] {
+  margin: 0 0.5em 0.2em 0;
+  vertical-align: middle;
+  cursor: pointer;
+  accent-color: var(--accent);
 }
 
 .markdown-body table {

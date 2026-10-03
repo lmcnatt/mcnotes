@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     }
 
     // Sign JWT
-    const token = await signJWT({ username: cleanUsername });
+    const token = await signJWT({ username: cleanUsername, tv: user.token_version ?? 0 });
 
     const response = NextResponse.json({
       success: true,

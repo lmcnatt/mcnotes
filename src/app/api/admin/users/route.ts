@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getUserByUsername, createUser, getAllUsers } from '@/lib/db';
 import { hashPassword } from '@/lib/auth';
 import { getUserDir } from '@/lib/notes';
+import { getUserFolderStats } from '@/lib/admin-users';
 
 function getAdmin(request: Request) {
   const username = request.headers.get('x-user-username');
@@ -16,8 +17,8 @@ export async function GET(request: Request) {
   if (!admin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
-  const users = getAllUsers();
-  return NextResponse.json({ users });
+  const users = getAllUsers().map((u) => ({ ...u, ...getUserFolderStats(u.username) }));
+  return NextResponse.json({ users, currentUsername: admin.username });
 }
 
 export async function POST(request: Request) {

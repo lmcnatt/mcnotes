@@ -31,6 +31,18 @@ interface SearchResult {
   matches: { line: number; text: string }[];
 }
 
+const SIDEBAR_WIDTH_KEY = 'mcnotes.sidebarWidth';
+const SIDEBAR_DEFAULT_WIDTH = 320;
+const SIDEBAR_MIN_WIDTH = 220;
+
+function clampSidebarWidth(w: number): number {
+  const max = Math.max(
+    SIDEBAR_MIN_WIDTH,
+    Math.min(600, Math.floor(window.innerWidth / 2))
+  );
+  return Math.min(max, Math.max(SIDEBAR_MIN_WIDTH, w));
+}
+
 export default function Dashboard() {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [username, setUsername] = useState<string>('');
@@ -62,6 +74,7 @@ export default function Dashboard() {
   const [targetPath, setTargetPath] = useState<string>('');
 
   const router = useRouter();
+  const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_DEFAULT_WIDTH);
   const autoSaveTimeout = useRef<NodeJS.Timeout | null>(null);
   const latestContent = useRef<string>('');
 
@@ -323,6 +336,61 @@ export default function Dashboard() {
         saveNoteContent(selectedPath, newContent);
       }
     }, 1000);
+  };
+
+  // Ctrl/Cmd+S saves immediately; Ctrl/Cmd+L is blocked so it never focuses the address bar.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 's') {
+        e.preventDefault();
+        if (selectedPath) {
+          if (autoSaveTimeout.current) clearTimeout(autoSaveTimeout.current);
+          saveNoteContent(selectedPath, latestContent.current);
+        }
+      } else if (key === 'l' && selectedPath) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedPath]);
+
+  // Resizable sidebar (desktop only)
+  useEffect(() => {
+    const saved = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) || '', 10);
+    if (!isNaN(saved)) setSidebarWidth(clampSidebarWidth(saved));
+    const onResize = () => setSidebarWidth((w) => clampSidebarWidth(w));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const handleSidebarResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    let latest = startWidth;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    const onMove = (ev: PointerEvent) => {
+      latest = clampSidebarWidth(startWidth + ev.clientX - startX);
+      setSidebarWidth(latest);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(latest));
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const handleSidebarResizeReset = () => {
+    setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_DEFAULT_WIDTH));
   };
 
   // Search debounce
@@ -640,6 +708,7 @@ export default function Dashboard() {
       <div 
         className={`
           w-80 min-w-[320px] max-w-[85vw] h-full
+          lg:w-[var(--sidebar-w)] lg:min-w-[220px] lg:max-w-none
           bg-sidebar-bg border-r border-border-theme
           flex flex-col
           pt-[env(safe-area-inset-top)] lg:pt-0
@@ -647,7 +716,16 @@ export default function Dashboard() {
           fixed lg:relative inset-y-0 left-0 z-50 lg:z-10
           transition-transform duration-200 ease-in-out
         `}
+        style={{ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties}
       >
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          title="Drag to resize (double-click to reset)"
+          onPointerDown={handleSidebarResizeStart}
+          onDoubleClick={handleSidebarResizeReset}
+          className="hidden lg:block absolute top-0 right-[-3px] w-1.5 h-full cursor-col-resize z-20 hover:bg-accent/40 active:bg-accent/60 transition-colors touch-none"
+        />
         <div className="flex flex-col p-4 border-b border-border-theme bg-sidebar-bg gap-2">
           <div className="flex items-center justify-between">
             <button

@@ -49,19 +49,19 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return bcrypt.compare(password, hash);
 }
 
-export async function signJWT(payload: { username: string }): Promise<string> {
-  return new SignJWT(payload)
+export async function signJWT(payload: { username: string; tv?: number }): Promise<string> {
+  return new SignJWT({ username: payload.username, tv: payload.tv ?? 0 })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('30d') // 30 days session
     .sign(getSecretKey());
 }
 
-export async function verifyJWT(token: string): Promise<{ username: string } | null> {
+export async function verifyJWT(token: string): Promise<{ username: string; tv?: number } | null> {
   try {
     const { payload } = await jwtVerify(token, getSecretKey());
-    return payload as { username: string };
-  } catch (e) {
+    return payload as { username: string; tv?: number };
+  } catch {
     return null;
   }
 }

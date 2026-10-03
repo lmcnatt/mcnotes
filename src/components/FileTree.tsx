@@ -9,7 +9,6 @@ import {
   Edit3, 
   ChevronRight, 
   ChevronDown,
-  Smile,
   MoreHorizontal
 } from 'lucide-react';
 import { FileNode } from '@/lib/notes';
@@ -210,7 +209,7 @@ export default function FileTree({
         <div key={node.relativePath} className="w-full">
           <div 
             className={`
-              group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer select-none transition-all duration-150
+              group relative flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer select-none transition-all duration-150
               ${isSelected ? 'bg-card-bg font-medium shadow-sm border border-border-theme/40' : 'hover:bg-card-hover text-text-muted hover:text-text-main'}
               ${draggedOverPath === node.relativePath ? 'bg-accent/10 border border-dashed border-accent' : ''}
             `}
@@ -255,10 +254,10 @@ export default function FileTree({
                 onClick={e => e.stopPropagation()}
               />
             ) : (
-              <span className="text-sm truncate select-none">{getFolderDisplayName(node.name)}</span>
+              <span className="text-sm truncate select-none min-w-0" title={getFolderDisplayName(node.name)}>{getFolderDisplayName(node.name)}</span>
             )}
 
-            <div className="ml-auto pl-1 flex items-center" onClick={e => e.stopPropagation()}>
+            <div className="ml-auto pl-1 flex items-center lg:contents" onClick={e => e.stopPropagation()}>
               {/* ⋮ button — mobile only, always visible */}
               <button
                 className="lg:hidden p-1.5 rounded text-text-muted active:text-text-main transition"
@@ -268,7 +267,7 @@ export default function FileTree({
               </button>
               {/* Actions: appear on hover (desktop) or when ⋮ tapped (mobile) */}
               <div
-                className={`flex items-center gap-0.5 lg:opacity-0 lg:group-hover:opacity-100 lg:transition-opacity ${
+                className={`flex items-center gap-0.5 lg:absolute lg:right-1 lg:top-1/2 lg:-translate-y-1/2 lg:pl-1 lg:rounded lg:opacity-0 lg:pointer-events-none lg:group-hover:opacity-100 lg:group-hover:pointer-events-auto lg:transition-opacity ${isSelected ? 'lg:bg-card-bg' : 'lg:bg-card-hover'} ${
                   mobileMenuPath === node.relativePath ? 'flex' : 'hidden lg:flex'
                 }`}
               >
@@ -316,7 +315,7 @@ export default function FileTree({
         <div 
           key={node.relativePath}
           className={`
-            group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer select-none transition-all duration-150
+            group relative flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer select-none transition-all duration-150
             ${isSelected ? 'bg-card-bg font-medium shadow-sm border border-border-theme/40 text-accent' : 'hover:bg-card-hover text-text-muted hover:text-text-main'}
             ${draggedOverPath === node.relativePath ? 'bg-accent/10 border border-dashed border-accent' : ''}
           `}
@@ -345,10 +344,10 @@ export default function FileTree({
               onClick={e => e.stopPropagation()}
             />
           ) : (
-            <span className="text-sm truncate select-none">{node.name.replace('.md', '')}</span>
+            <span className="text-sm truncate select-none min-w-0" title={node.name.replace('.md', '')}>{node.name.replace('.md', '')}</span>
           )}
 
-          <div className="ml-auto pl-1 flex items-center" onClick={e => e.stopPropagation()}>
+          <div className="ml-auto pl-1 flex items-center lg:contents" onClick={e => e.stopPropagation()}>
             {/* ⋮ button — mobile only, always visible */}
             <button
               className="lg:hidden p-1.5 rounded text-text-muted active:text-text-main transition"
@@ -358,7 +357,7 @@ export default function FileTree({
             </button>
             {/* Actions: appear on hover (desktop) or when ⋮ tapped (mobile) */}
             <div
-              className={`flex items-center gap-0.5 lg:opacity-0 lg:group-hover:opacity-100 lg:transition-opacity ${
+              className={`flex items-center gap-0.5 lg:absolute lg:right-1 lg:top-1/2 lg:-translate-y-1/2 lg:pl-1 lg:rounded lg:opacity-0 lg:pointer-events-none lg:group-hover:opacity-100 lg:group-hover:pointer-events-auto lg:transition-opacity ${isSelected ? 'lg:bg-card-bg' : 'lg:bg-card-hover'} ${
                 mobileMenuPath === node.relativePath ? 'flex' : 'hidden lg:flex'
               }`}
             >

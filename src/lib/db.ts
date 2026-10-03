@@ -43,6 +43,9 @@ if (!userColumns.some((c) => c.name === 'is_admin')) {
 if (!userColumns.some((c) => c.name === 'must_change_password')) {
   db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
 }
+if (!userColumns.some((c) => c.name === 'token_version')) {
+  db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0');
+}
 
 // Seed the initial registration setting once, from the environment default.
 const seedRegistration = db.prepare(
@@ -56,7 +59,42 @@ export interface User {
   password?: string;
   is_admin: number;
   must_change_password: number;
+  token_version?: number;
   created_at: string;
+}
+
+export function getUserById(id: number): User | null {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  return (user as User) || null;
+}
+
+export function countAdmins(): number {
+  const row = db.prepare('SELECT COUNT(*) AS count FROM users WHERE is_admin = 1').get() as {
+    count: number;
+  };
+  return row.count;
+}
+
+export function setUserAdmin(id: number, isAdmin: boolean): void {
+  // Role changes bump the token version so affected sessions are invalidated immediately.
+  db.prepare(
+    'UPDATE users SET is_admin = ?, token_version = token_version + 1 WHERE id = ?'
+  ).run(isAdmin ? 1 : 0, id);
+}
+
+export function adminResetUserPassword(id: number, passwordHash: string): void {
+  db.prepare(
+    'UPDATE users SET password = ?, must_change_password = 1, token_version = token_version + 1 WHERE id = ?'
+  ).run(passwordHash, id);
+}
+
+/** Removes the user row and all of their node metadata atomically. */
+export function deleteUserRecords(id: number, username: string): void {
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM node_metadata WHERE username = ?').run(username);
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  });
+  tx();
 }
 
 export function getUserByUsername(username: string): User | null {
@@ -77,14 +115,18 @@ export function createUser(
   mustChangePassword = false
 ): User {
   const stmt = db.prepare(
-    'INSERT INTO users (username, password, is_admin, must_change_password) VALUES (?, ?, ?, ?)'
+    'INSERT INTO users (username, password, is_admin, must_change_password, token_version) VALUES (?, ?, ?, ?, ?)'
   );
-  const info = stmt.run(username, passwordHash, isAdmin ? 1 : 0, mustChangePassword ? 1 : 0);
+  // New accounts start at a time-based token version so a stale token from a previously
+  // deleted account with the same (reusable) username can never match.
+  const tokenVersion = Math.floor(Date.now() / 1000);
+  const info = stmt.run(username, passwordHash, isAdmin ? 1 : 0, mustChangePassword ? 1 : 0, tokenVersion);
   return {
     id: info.lastInsertRowid as number,
     username,
     is_admin: isAdmin ? 1 : 0,
     must_change_password: mustChangePassword ? 1 : 0,
+    token_version: tokenVersion,
     created_at: new Date().toISOString(),
   };
 }
