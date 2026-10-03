@@ -31,13 +31,13 @@ export async function POST(request: Request) {
 
     // Hash password & create user (first user is granted admin rights)
     const passwordHash = await hashPassword(password);
-    createUser(cleanUsername, passwordHash, isFirstUser);
+    const newUser = createUser(cleanUsername, passwordHash, isFirstUser);
 
     // Create user's notes directory
     getUserDir(cleanUsername);
 
     // Sign JWT and set cookie
-    const token = await signJWT({ username: cleanUsername });
+    const token = await signJWT({ username: cleanUsername, tv: newUser.token_version ?? 0 });
 
     const response = NextResponse.json({ success: true, username: cleanUsername });
     
