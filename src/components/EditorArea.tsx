@@ -23,7 +23,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import type { FileNode } from '@/lib/notes';
-import { handleTabIndent } from '@/lib/editorIndent';
+import { handleTabIndent, handleEnterKey } from '@/lib/editorIndent';
 import {
   resolveLink,
   createSlugger,
@@ -820,6 +820,20 @@ export default function EditorArea({
     if (e.key === 'Tab') {
       handleEditorTabKey(e);
       return;
+    }
+
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const textarea = textareaRef.current;
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const result = handleEnterKey(contentRef.current, start, end);
+        if (result) {
+          e.preventDefault();
+          applyEdit(result.newContent, result.selStart, result.selEnd);
+          return;
+        }
+      }
     }
 
     const modifier = e.ctrlKey || e.metaKey;

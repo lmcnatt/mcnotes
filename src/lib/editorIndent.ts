@@ -272,3 +272,123 @@ export function handleTabIndent(
     };
   }
 }
+
+/**
+ * Handles Enter key on list items:
+ * - Continues bullet points (- * +), numbered lists (1. 2.), or checkboxes (- [ ]).
+ * - Exits the list if pressed on an empty bullet point.
+ * - Renumbers subsequent numbered list items.
+ */
+export function handleEnterKey(
+  content: string,
+  start: number,
+  end: number
+): IndentResult | null {
+  const lineStartIndex = content.lastIndexOf('\n', start - 1) + 1;
+  const endPos = end > start && content[end - 1] === '\n' ? end - 1 : end;
+  let lineEndIndex = content.indexOf('\n', endPos);
+  if (lineEndIndex === -1) lineEndIndex = content.length;
+
+  // If selection spans multiple lines, let default newline behavior handle it
+  if (content.substring(start, end).includes('\n')) {
+    return null;
+  }
+
+  const line = content.substring(lineStartIndex, lineEndIndex);
+  const match = line.match(LIST_LINE_REGEX);
+  if (!match) {
+    return null;
+  }
+
+  const leadingSpaces = match[1];
+  const marker = match[2];
+  const numDelim = match[3];
+  const spacesAfterMarker = match[4];
+  const checkbox = match[5];
+  const itemText = match[6];
+
+  const prefixLen = leadingSpaces.length + marker.length + spacesAfterMarker.length + (checkbox ? checkbox.length + 1 : 0);
+  const cursorCol = start - lineStartIndex;
+
+  // If cursor is before the bullet marker text, don't continue the bullet
+  if (cursorCol < prefixLen - 1) {
+    return null;
+  }
+
+  // Case 1: Empty bullet point (item text is empty or whitespace only)
+  // Pressing Enter clears the bullet or outdents if indented
+  if (itemText.trim() === '') {
+    if (leadingSpaces.length >= 2) {
+      // Outdent by 2 spaces
+      const newIndent = leadingSpaces.slice(2);
+      const newPrefix = checkbox
+        ? `${newIndent}${marker}${spacesAfterMarker}[ ] `
+        : `${newIndent}${marker}${spacesAfterMarker}`;
+      const newContent = content.substring(0, lineStartIndex) + newPrefix + content.substring(lineEndIndex);
+      const newPos = lineStartIndex + newPrefix.length;
+      return {
+        newContent,
+        selStart: newPos,
+        selEnd: newPos,
+      };
+    } else {
+      // Clear the marker completely, leaving a clean empty line
+      const newContent = content.substring(0, lineStartIndex) + content.substring(lineEndIndex);
+      return {
+        newContent,
+        selStart: lineStartIndex,
+        selEnd: lineStartIndex,
+      };
+    }
+  }
+
+  // Case 2: Non-empty list item -> continue on next line
+  const beforeCursor = line.substring(0, cursorCol);
+  const afterCursor = line.substring(end - lineStartIndex);
+
+  let nextPrefix = '';
+  if (numDelim) {
+    const currentNum = parseInt(marker, 10);
+    const nextNum = isNaN(currentNum) ? 1 : currentNum + 1;
+    const cbPart = checkbox ? '[ ] ' : '';
+    nextPrefix = `${leadingSpaces}${nextNum}${numDelim}${spacesAfterMarker}${cbPart}`;
+  } else {
+    const cbPart = checkbox ? '[ ] ' : '';
+    nextPrefix = `${leadingSpaces}${marker}${spacesAfterMarker}${cbPart}`;
+  }
+
+  // Split into lines to allow list renumbering
+  const allLines = content.split('\n');
+  let currentPos = 0;
+  let lineIdx = 0;
+  for (let i = 0; i < allLines.length; i++) {
+    const nextPos = currentPos + allLines[i].length;
+    if (currentPos <= lineStartIndex && lineStartIndex <= nextPos) {
+      lineIdx = i;
+      break;
+    }
+    currentPos = nextPos + 1;
+  }
+
+  allLines[lineIdx] = beforeCursor;
+  allLines.splice(lineIdx + 1, 0, `${nextPrefix}${afterCursor}`);
+
+  const renumbered = renumberLists(allLines);
+  const newContent = renumbered.join('\n');
+
+  // Calculate new cursor position (right after nextPrefix)
+  const nextLineStart = renumbered.slice(0, lineIdx + 1).reduce((acc, l) => acc + l.length + 1, 0);
+  const actualNextLine = renumbered[lineIdx + 1] || '';
+  const actualPrefixMatch = actualNextLine.match(LIST_LINE_REGEX);
+  const actualPrefixLen = actualPrefixMatch
+    ? actualPrefixMatch[1].length + actualPrefixMatch[2].length + actualPrefixMatch[4].length + (actualPrefixMatch[5] ? actualPrefixMatch[5].length + 1 : 0)
+    : nextPrefix.length;
+
+  const newCursorPos = nextLineStart + actualPrefixLen;
+
+  return {
+    newContent,
+    selStart: newCursorPos,
+    selEnd: newCursorPos,
+  };
+}
