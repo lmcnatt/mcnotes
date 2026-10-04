@@ -68,21 +68,13 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const { oldName, newName, emoji } = await req.json();
+    const { oldName, newName, emoji, updateLinks } = await req.json();
     if (!oldName || typeof oldName !== 'string') {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 });
     }
 
     const userDir = getUserDir(username);
     const oldDir = path.normalize(path.join(userDir, oldName));
-
-    console.log("PATCH PROJECT RENAME LOG:", {
-      username,
-      oldName,
-      userDir,
-      oldDir,
-      exists: fs.existsSync(oldDir)
-    });
 
     if (!oldDir.startsWith(userDir) || !fs.existsSync(oldDir)) {
       return NextResponse.json({ error: 'Project does not exist' }, { status: 404 });
@@ -101,6 +93,11 @@ export async function PATCH(req: Request) {
           return NextResponse.json({ error: 'Project name already in use' }, { status: 400 });
         }
         
+        if (updateLinks) {
+          const { rewriteLinksOnMove } = await import('@/lib/links');
+          rewriteLinksOnMove(username, oldName, cleanNewName);
+        }
+
         fs.renameSync(oldDir, newDir);
         // Update database paths
         const { updateMetadataPaths } = await import('@/lib/db');

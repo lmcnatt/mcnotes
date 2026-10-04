@@ -11,13 +11,15 @@ import {
   ChevronDown,
   MoreHorizontal
 } from 'lucide-react';
-import { FileNode } from '@/lib/notes';
-import { useEffect } from 'react';
+import type { FileNode } from '@/lib/notes';
+import { useEffect, useRef } from 'react';
 
 interface FileTreeProps {
   tree: FileNode[];
   selectedPath: string | null;
   rootPath?: string;
+  expandedFolders?: Record<string, boolean>;
+  onToggleFolder?: (path: string) => void;
   onSelect: (path: string) => void;
   onCreateItem: (type: 'file' | 'directory', parentPath: string) => void;
   onRenameItem: (oldPath: string, newPath: string) => void;
@@ -52,19 +54,25 @@ export default function FileTree({
   tree,
   selectedPath,
   rootPath = '',
+  expandedFolders: propExpandedFolders,
+  onToggleFolder: propOnToggleFolder,
   onSelect,
   onCreateItem,
   onRenameItem,
   onDeleteItem,
   onSetEmoji
 }: FileTreeProps) {
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [internalExpandedFolders, setInternalExpandedFolders] = useState<Record<string, boolean>>({});
+  const expandedFolders = propExpandedFolders !== undefined ? propExpandedFolders : internalExpandedFolders;
+
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [draggedOverPath, setDraggedOverPath] = useState<string | null>(null);
   const [activeEmojiPickerPath, setActiveEmojiPickerPath] = useState<string | null>(null);
   const [pickerPosition, setPickerPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [mobileMenuPath, setMobileMenuPath] = useState<string | null>(null);
+
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
   const getParentPath = (value: string) => {
@@ -74,15 +82,30 @@ export default function FileTree({
   };
 
   useEffect(() => {
-    const saved = localStorage.getItem('notes-expanded-folders');
-    if (saved) {
-      try {
-        setExpandedFolders(JSON.parse(saved));
-      } catch (e) {
-        console.error(e);
+    if (propExpandedFolders === undefined) {
+      const saved = localStorage.getItem('notes-expanded-folders');
+      if (saved) {
+        try {
+          setInternalExpandedFolders(JSON.parse(saved));
+        } catch (e) {
+          console.error(e);
+        }
       }
     }
-  }, []);
+  }, [propExpandedFolders]);
+
+  // Section 4: Auto-scroll sidebar when selected note changes
+  useEffect(() => {
+    if (!selectedPath || !containerRef.current) return;
+    const timer = setTimeout(() => {
+      if (!containerRef.current) return;
+      const el = containerRef.current.querySelector(`[data-tree-path="${CSS.escape(selectedPath)}"]`);
+      if (el) {
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [selectedPath]);
 
   useEffect(() => {
     const handleGlobalClick = () => {
@@ -175,11 +198,15 @@ export default function FileTree({
   };
 
   const toggleFolder = (path: string) => {
-    setExpandedFolders(prev => {
-      const next = { ...prev, [path]: !prev[path] };
-      localStorage.setItem('notes-expanded-folders', JSON.stringify(next));
-      return next;
-    });
+    if (propOnToggleFolder) {
+      propOnToggleFolder(path);
+    } else {
+      setInternalExpandedFolders(prev => {
+        const next = { ...prev, [path]: !prev[path] };
+        localStorage.setItem('notes-expanded-folders', JSON.stringify(next));
+        return next;
+      });
+    }
   };
 
   const startRename = (node: FileNode, e: React.MouseEvent) => {
@@ -208,6 +235,7 @@ export default function FileTree({
       return (
         <div key={node.relativePath} className="w-full">
           <div 
+            data-tree-path={node.relativePath}
             className={`
               group relative flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer select-none transition-all duration-150
               ${isSelected ? 'bg-card-bg font-medium shadow-sm border border-border-theme/40' : 'hover:bg-card-hover text-text-muted hover:text-text-main'}
@@ -314,6 +342,7 @@ export default function FileTree({
       return (
         <div 
           key={node.relativePath}
+          data-tree-path={node.relativePath}
           className={`
             group relative flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer select-none transition-all duration-150
             ${isSelected ? 'bg-card-bg font-medium shadow-sm border border-border-theme/40 text-accent' : 'hover:bg-card-hover text-text-muted hover:text-text-main'}
@@ -384,6 +413,7 @@ export default function FileTree({
 
   return (
     <div 
+      ref={containerRef}
       className="flex-1 overflow-y-auto p-4 space-y-0.5"
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDropAtRoot}

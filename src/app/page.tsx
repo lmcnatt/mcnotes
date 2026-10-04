@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import FileTree from '@/components/FileTree';
 import EditorArea from '@/components/EditorArea';
-import { FileNode } from '@/lib/notes';
+import type { FileNode } from '@/lib/notes';
 import Link from 'next/link';
 
 type Theme = 'sepia' | 'light' | 'dark';
@@ -68,10 +68,11 @@ export default function Dashboard() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
 
-  // Modals state
   const [modalType, setModalType] = useState<'create_file' | 'create_folder' | 'delete' | null>(null);
   const [modalInput, setModalInput] = useState('');
   const [targetPath, setTargetPath] = useState<string>('');
+  const [deleteIncomingCount, setDeleteIncomingCount] = useState<number>(0);
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
 
   const router = useRouter();
   const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_DEFAULT_WIDTH);
@@ -113,8 +114,25 @@ export default function Dashboard() {
     }
   };
 
+  const handleToggleFolder = (path: string) => {
+    setExpandedFolders((prev) => {
+      const next = { ...prev, [path]: !prev[path] };
+      localStorage.setItem('notes-expanded-folders', JSON.stringify(next));
+      return next;
+    });
+  };
+
   useEffect(() => {
     const init = async () => {
+      const savedExp = localStorage.getItem('notes-expanded-folders');
+      if (savedExp) {
+        try {
+          setExpandedFolders(JSON.parse(savedExp));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
       const projectList = await fetchProjects();
       const savedProj = localStorage.getItem('notes-active-project') || '';
       // Only restore saved project if it still exists
@@ -139,6 +157,7 @@ export default function Dashboard() {
       setTheme(savedTheme);
       document.documentElement.setAttribute('data-theme', savedTheme);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Handle Theme switching
@@ -197,14 +216,37 @@ export default function Dashboard() {
     e.preventDefault();
     if (!editingProject) return;
     if (!editNameInput.trim()) return;
+
+    const cleanNewName = editNameInput.trim().replace(/[\/\\?%*:|"<>\.]/g, '');
+    let updateLinks = false;
+
+    if (cleanNewName && cleanNewName !== editingProject.name) {
+      try {
+        const checkRes = await fetch('/api/notes/links/check-rename', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ oldPath: editingProject.name, newPath: cleanNewName }),
+        });
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          if (checkData.linkCount > 0) {
+            updateLinks = confirm(`Update ${checkData.linkCount} links in ${checkData.noteCount} notes?`);
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
     try {
       const res = await fetch('/api/notes/projects', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           oldName: editingProject.name, 
-          newName: editNameInput.trim(),
-          emoji: editEmojiInput
+          newName: cleanNewName,
+          emoji: editEmojiInput,
+          updateLinks,
         }),
       });
       if (res.ok) {
@@ -227,9 +269,25 @@ export default function Dashboard() {
 
   const handleDeleteProject = async (project: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`Delete project "${project}" and all its notes? This cannot be undone.`)) {
-      return;
+
+    try {
+      const checkRes = await fetch(`/api/notes/links/check-delete?path=${encodeURIComponent(project)}`);
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        if (checkData.count > 0) {
+          if (!confirm(`Warning: ${checkData.count} notes link to notes in this project. Delete project "${project}" and all its notes? This cannot be undone.`)) {
+            return;
+          }
+        } else if (!confirm(`Delete project "${project}" and all its notes? This cannot be undone.`)) {
+          return;
+        }
+      } else if (!confirm(`Delete project "${project}" and all its notes? This cannot be undone.`)) {
+        return;
+      }
+    } catch {
+      if (!confirm(`Delete project "${project}" and all its notes? This cannot be undone.`)) return;
     }
+
     try {
       const res = await fetch('/api/notes/projects', {
         method: 'DELETE',
@@ -259,40 +317,68 @@ export default function Dashboard() {
     }
   };
 
-  // Open note and load content
-  const handleSelectNote = async (path: string) => {
-    // If a directory was clicked, we don't load content
-    const findNode = (nodes: FileNode[], target: string): FileNode | null => {
-      for (const node of nodes) {
-        if (node.relativePath === target) return node;
-        if (node.children) {
-          const found = findNode(node.children, target);
-          if (found) return found;
-        }
-      }
-      return null;
-    };
+  // Section 4: Open note with automatic project switching, ancestor folder expansion, and reveal
+  const handleSelectNote = async (path: string, anchor?: string) => {
+    let fullPath = path;
+    if (!fullPath.includes('/')) {
+      fullPath = activeProject ? `${activeProject}/${fullPath}` : fullPath;
+    }
 
-    const node = findNode(tree, path);
-    if (node?.isDirectory) return;
+    if (!fullPath.endsWith('.md')) {
+      return;
+    }
+
+    const parts = fullPath.split('/');
+    const noteProject = parts[0];
+
+    // 1. If note belongs to a different project, switch the active project automatically
+    if (noteProject && noteProject !== activeProject && projects.some(p => p.name === noteProject)) {
+      if (saveStatus === 'unsaved' && selectedPath) {
+        await saveNoteContent(selectedPath, latestContent.current);
+      }
+      setActiveProject(noteProject);
+      localStorage.setItem('notes-active-project', noteProject);
+      await fetchTree(noteProject);
+    }
+
+    // 2 & 3. Expand all ancestor folders of the note, collapse unrelated folders
+    const folderParts = parts.slice(1, -1);
+    const nextExpanded: Record<string, boolean> = {};
+    let currentAcc = '';
+    for (const part of folderParts) {
+      currentAcc = currentAcc ? `${currentAcc}/${part}` : part;
+      nextExpanded[currentAcc] = true;
+    }
+    setExpandedFolders(nextExpanded);
+    localStorage.setItem('notes-expanded-folders', JSON.stringify(nextExpanded));
 
     // Save active note if unsaved before switching
-    if (saveStatus === 'unsaved' && selectedPath) {
+    if (saveStatus === 'unsaved' && selectedPath && selectedPath !== fullPath) {
       await saveNoteContent(selectedPath, latestContent.current);
     }
 
     setLoadingNote(true);
-    setSelectedPath(path);
-    localStorage.setItem('notes-selected-path', path);
+    setSelectedPath(fullPath);
+    localStorage.setItem('notes-selected-path', fullPath);
     setSaveStatus('saved');
     setSidebarOpen(false);
 
     try {
-      const res = await fetch(`/api/notes/content?path=${encodeURIComponent(path)}`);
+      const res = await fetch(`/api/notes/content?path=${encodeURIComponent(fullPath)}`);
       const data = await res.json();
       if (res.ok) {
         setNoteContent(data.content);
         latestContent.current = data.content;
+
+        if (anchor) {
+          setTimeout(() => {
+            const targetId = anchor.replace(/^#/, '');
+            const el = document.getElementById(targetId);
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth' });
+            }
+          }, 150);
+        }
       } else {
         console.error(data.error);
       }
@@ -301,6 +387,27 @@ export default function Dashboard() {
     } finally {
       setLoadingNote(false);
     }
+  };
+
+  const handleSelectFolder = async (folderFullPath: string) => {
+    const parts = folderFullPath.replace(/\/+$/, '').split('/');
+    const folderProject = parts[0];
+
+    if (folderProject && folderProject !== activeProject && projects.some(p => p.name === folderProject)) {
+      setActiveProject(folderProject);
+      localStorage.setItem('notes-active-project', folderProject);
+      await fetchTree(folderProject);
+    }
+
+    const nextExpanded: Record<string, boolean> = {};
+    let currentAcc = '';
+    for (let i = 1; i < parts.length; i++) {
+      currentAcc = currentAcc ? `${currentAcc}/${parts[i]}` : parts[i];
+      nextExpanded[currentAcc] = true;
+    }
+    setExpandedFolders(nextExpanded);
+    localStorage.setItem('notes-expanded-folders', JSON.stringify(nextExpanded));
+    setSidebarOpen(true);
   };
 
   // Save content to API
@@ -450,13 +557,26 @@ export default function Dashboard() {
     }
   };
 
-  // Rename item API call
+  // Section 6.7: Rename item API call with link check
   const handleRenameItem = async (oldPath: string, newPath: string) => {
     try {
-      const res = await fetch('/api/notes/rename', {
+      let updateLinks = false;
+      const checkRes = await fetch('/api/notes/links/check-rename', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ oldPath, newPath }),
+      });
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        if (checkData.linkCount > 0) {
+          updateLinks = confirm(`Update ${checkData.linkCount} links in ${checkData.noteCount} notes?`);
+        }
+      }
+
+      const res = await fetch('/api/notes/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldPath, newPath, updateLinks }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -470,6 +590,22 @@ export default function Dashboard() {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  // Section 6.8: Prompt delete item with incoming link count check
+  const promptDeleteItem = async (path: string) => {
+    setTargetPath(path);
+    setDeleteIncomingCount(0);
+    try {
+      const res = await fetch(`/api/notes/links/check-delete?path=${encodeURIComponent(path)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDeleteIncomingCount(data.count || 0);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setModalType('delete');
   };
 
   // Delete item API call
@@ -520,53 +656,6 @@ export default function Dashboard() {
     localStorage.removeItem('notes-selected-path');
     setNoteContent('');
     setSidebarOpen(false);
-  };
-
-  // WikiLink resolution
-  const handleSelectWikiLink = async (noteName: string) => {
-    // 1. Search in existing file tree for noteName.md
-    const targetFilename = `${noteName.toLowerCase()}.md`;
-    let foundPath: string | null = null;
-
-    const findNote = (nodes: FileNode[]) => {
-      for (const node of nodes) {
-        if (!node.isDirectory && node.name.toLowerCase() === targetFilename) {
-          foundPath = node.relativePath;
-          return;
-        }
-        if (node.children) {
-          findNote(node.children);
-        }
-      }
-    };
-
-    findNote(tree);
-
-    if (foundPath) {
-      handleSelectNote(foundPath);
-    } else {
-      // 2. If not found, create a new note in root folder
-      try {
-        const res = await fetch('/api/notes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'file',
-            parentPath: '',
-            name: `${noteName}.md`,
-          }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          await fetchTree();
-          handleSelectNote(data.relativePath);
-        } else {
-          alert('Failed to automatically create linked note: ' + data.error);
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    }
   };
 
   const handleSetEmoji = async (path: string, emoji: string) => {
@@ -1002,6 +1091,8 @@ export default function Dashboard() {
                   tree={stripTree(tree)}
                   selectedPath={selectedPath ? stripPrefix(selectedPath) : selectedPath}
                   rootPath=""
+                  expandedFolders={expandedFolders}
+                  onToggleFolder={handleToggleFolder}
                   onSelect={(path) => handleSelectNote(addPrefix(path))}
                   onCreateItem={(type, parentPath) => {
                     setTargetPath(addPrefix(parentPath));
@@ -1009,8 +1100,7 @@ export default function Dashboard() {
                   }}
                   onRenameItem={(oldPath, newPath) => handleRenameItem(addPrefix(oldPath), addPrefix(newPath))}
                   onDeleteItem={(path) => {
-                    setTargetPath(addPrefix(path));
-                    setModalType('delete');
+                    promptDeleteItem(addPrefix(path));
                   }}
                   onSetEmoji={(path, emoji) => handleSetEmoji(addPrefix(path), emoji)}
                 />
@@ -1061,8 +1151,11 @@ export default function Dashboard() {
               notePath={selectedPath}
               initialContent={noteContent}
               onSave={handleEditorChange}
-              onSelectWikiLink={handleSelectWikiLink}
               saveStatus={saveStatus}
+              projects={projects}
+              activeProjectTree={tree}
+              onSelectNote={(p, anchor) => handleSelectNote(p, anchor)}
+              onSelectFolder={handleSelectFolder}
             />
           )
         ) : (
@@ -1091,6 +1184,11 @@ export default function Dashboard() {
               <p className="text-sm text-text-muted leading-relaxed">
                 Are you sure you want to delete &quot;{targetPath.split('/').pop()?.replace('.md', '')}&quot;? This action cannot be undone.
               </p>
+              {deleteIncomingCount > 0 && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  Warning: {deleteIncomingCount} {deleteIncomingCount === 1 ? 'note links' : 'notes link'} here.
+                </div>
+              )}
               <div className="flex justify-end gap-2 pt-2">
                 <button 
                   className="px-4 py-2 text-sm font-semibold text-text-muted hover:text-text-main hover:bg-card-hover rounded-lg transition"

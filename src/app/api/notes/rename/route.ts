@@ -9,9 +9,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { oldPath, newPath } = await request.json();
+    const { oldPath, newPath, updateLinks } = await request.json();
     if (!oldPath || !newPath) {
       return NextResponse.json({ error: 'oldPath and newPath are required' }, { status: 400 });
+    }
+
+    if (updateLinks) {
+      const { rewriteLinksOnMove } = await import('@/lib/links');
+      rewriteLinksOnMove(username, oldPath, newPath);
     }
 
     const finalPath = renameItem(username, oldPath, newPath);

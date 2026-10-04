@@ -1,9 +1,12 @@
+'use client';
+
 import React, {
   useState,
   useEffect,
   useRef,
   useMemo,
   useDeferredValue,
+  useCallback,
 } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -14,29 +17,40 @@ import {
   Target,
   Undo2,
   Redo2,
+  ExternalLink,
 } from 'lucide-react';
+import type { FileNode } from '@/lib/notes';
+import { handleTabIndent } from '@/lib/editorIndent';
+import {
+  resolveLink,
+  createSlugger,
+  findLinksInMarkdown,
+} from '@/lib/linkUtils';
+import BreadcrumbNavigator from './BreadcrumbNavigator';
+import FormattingToolbar, { ActiveFormats } from './FormattingToolbar';
+import LinkMakerModal, { ExistingLinkData } from './LinkMakerModal';
+import BacklinksPanel from './BacklinksPanel';
+import NoteEmbed from './NoteEmbed';
 
 interface EditorAreaProps {
   notePath: string;
   initialContent: string;
   onSave: (content: string) => void;
-  onSelectWikiLink: (noteName: string) => void;
   saveStatus: 'saved' | 'saving' | 'unsaved';
+  projects: { name: string; emoji: string }[];
+  activeProjectTree: FileNode[];
+  onSelectNote: (fullPath: string, anchor?: string) => void;
+  onSelectFolder?: (folderPath: string) => void;
 }
 
 type EditMode = 'source' | 'split' | 'live';
 
-// Preprocess underline syntax (++text++ and <u>text</u>) and WikiLinks [[Note Name]].
+// Preprocess underline syntax (++text++ and <u>text</u>).
 // Preserves line count so source-line mapping remains accurate.
 function preprocessMarkdown(text: string): string {
-  const withUnderline = text
+  return text
     .replace(/<u>([\s\S]*?)<\/u>/gi, '[$1](#u)')
     .replace(/\+\+([\s\S]*?)\+\+/g, '[$1](#u)');
-
-  return withUnderline.replace(/\[\[(.*?)\]\]/g, (_, p1) => {
-    const slug = p1.trim().replace(/\s+/g, '_');
-    return `[${p1.trim()}](#wikilink-${slug})`;
-  });
 }
 
 function getNodeText(node: React.ReactNode): string {
@@ -60,6 +74,7 @@ interface MarkdownPreviewProps {
   bottomPadding: number;
   disableHeavyPreview?: boolean;
   className?: string;
+  style?: React.CSSProperties;
 }
 
 // Memoized preview isolated from editor toolbar/stats re-renders
@@ -71,6 +86,7 @@ const MarkdownPreview = React.memo(function MarkdownPreview({
   bottomPadding,
   disableHeavyPreview,
   className = '',
+  style,
 }: MarkdownPreviewProps) {
   const processed = useMemo(() => preprocessMarkdown(content), [content]);
 
@@ -79,7 +95,7 @@ const MarkdownPreview = React.memo(function MarkdownPreview({
       ref={containerRef}
       onScroll={onScroll}
       className={`overflow-y-auto ${className}`}
-      style={{ paddingBottom: `${bottomPadding}px` }}
+      style={{ ...style, paddingBottom: `${bottomPadding}px` }}
     >
       {disableHeavyPreview ? (
         <div className="h-full flex items-center justify-center text-sm text-text-muted text-center px-4">
@@ -102,8 +118,11 @@ export default function EditorArea({
   notePath,
   initialContent,
   onSave,
-  onSelectWikiLink,
   saveStatus,
+  projects,
+  activeProjectTree,
+  onSelectNote,
+  onSelectFolder,
 }: EditorAreaProps) {
   const [content, setContent] = useState(initialContent);
   const contentRef = useRef(initialContent);
@@ -112,7 +131,10 @@ export default function EditorArea({
   // Deferred content for smooth typing during markdown preview parsing
   const deferredContent = useDeferredValue(content);
 
+  // View mode persisted in localStorage (survives reloads and note switches)
   const [mode, setMode] = useState<EditMode>('source');
+  const [isSwitchingMode, setIsSwitchingMode] = useState(false);
+
   const [isMobile, setIsMobile] = useState(false);
   const [wordGoal, setWordGoal] = useState<number>(0);
   const [showGoalDialog, setShowGoalDialog] = useState(false);
@@ -120,6 +142,35 @@ export default function EditorArea({
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [paneClientHeight, setPaneClientHeight] = useState<number>(0);
+
+  // Link maker modal state
+  const [showLinkMaker, setShowLinkMaker] = useState(false);
+  const [linkMakerEmbed, setLinkMakerEmbed] = useState(false);
+  const [activeExistingLink, setActiveExistingLink] = useState<ExistingLinkData | null>(null);
+
+  // Floating "Open link" button in Source mode
+  const [floatingLink, setFloatingLink] = useState<{
+    href: string;
+    text: string;
+    top: number;
+    left: number;
+  } | null>(null);
+
+  // Toast notification for broken links
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Active formatting state for toolbar
+  const [activeFormats, setActiveFormats] = useState<ActiveFormats>({
+    headingLevel: 0,
+    bold: false,
+    italic: false,
+    underline: false,
+    strikethrough: false,
+    code: false,
+    codeBlock: false,
+    quote: false,
+    listType: null,
+  });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -129,20 +180,53 @@ export default function EditorArea({
 
   const undoStackRef = useRef<string[]>([]);
   const redoStackRef = useRef<string[]>([]);
-  const scrollRatioRef = useRef<number>(0);
+  const savedSelectionRangeRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
 
   // Synchronization refs
   const sourceLineOffsetsRef = useRef<number[]>([]);
-  const previewAnchorsRef = useRef<{ line: number; top: number }[]>([]);
   const activeScrollOrigin = useRef<'source' | 'preview' | null>(null);
   const rafId = useRef<number | null>(null);
 
-  // Reset editor history when switching to a different note.
+  // Known note paths for link validation (client cache)
+  const [knownNotePaths, setKnownNotePaths] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const fetchPaths = async () => {
+      try {
+        const res = await fetch('/api/notes/links/all');
+        if (res.ok) {
+          const data = await res.json();
+          const paths = new Set<string>();
+          for (const item of data.items || []) {
+            paths.add(item.path);
+            if (item.path.endsWith('/')) {
+              paths.add(item.path.slice(0, -1));
+            }
+          }
+          setKnownNotePaths(paths);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    fetchPaths();
+  }, [notePath]);
+
+  // Load view mode from localStorage on mount
+  useEffect(() => {
+    const savedMode = localStorage.getItem('notes-view-mode') as EditMode;
+    if (savedMode && (savedMode === 'source' || savedMode === 'split' || savedMode === 'live')) {
+      setMode(savedMode);
+    }
+  }, []);
+
+  // Reset editor history when switching to a different note
   useEffect(() => {
     undoStackRef.current = [];
     redoStackRef.current = [];
     setCanUndo(false);
     setCanRedo(false);
+    setFloatingLink(null);
   }, [notePath]);
 
   useEffect(() => {
@@ -154,7 +238,7 @@ export default function EditorArea({
     return () => mediaQuery.removeEventListener('change', updateIsMobile);
   }, []);
 
-  // Sync external content updates without wiping local undo/redo history.
+  // Sync external content updates without wiping undo/redo history
   useEffect(() => {
     if (initialContent !== contentRef.current) {
       setContent(initialContent);
@@ -162,34 +246,38 @@ export default function EditorArea({
     }
   }, [initialContent]);
 
-  // Central edit application helper: manages undo/redo stack, autosave, and selection restore
-  const applyEdit = (
-    newContent: string,
-    selStart?: number,
-    selEnd?: number,
-    options: { focusTextarea?: boolean } = { focusTextarea: true }
-  ) => {
-    undoStackRef.current.push(contentRef.current);
-    if (undoStackRef.current.length > 200) {
-      undoStackRef.current.shift();
-    }
-    redoStackRef.current = [];
-    setCanUndo(true);
-    setCanRedo(false);
+  // Central edit application helper
+  const applyEdit = useCallback(
+    (
+      newContent: string,
+      selStart?: number,
+      selEnd?: number,
+      options: { focusTextarea?: boolean } = { focusTextarea: true }
+    ) => {
+      undoStackRef.current.push(contentRef.current);
+      if (undoStackRef.current.length > 200) {
+        undoStackRef.current.shift();
+      }
+      redoStackRef.current = [];
+      setCanUndo(true);
+      setCanRedo(false);
 
-    setContent(newContent);
-    contentRef.current = newContent;
-    onSave(newContent);
+      setContent(newContent);
+      contentRef.current = newContent;
+      onSave(newContent);
 
-    if (options.focusTextarea !== false && selStart !== undefined && selEnd !== undefined) {
-      requestAnimationFrame(() => {
-        if (textareaRef.current) {
-          textareaRef.current.focus();
-          textareaRef.current.setSelectionRange(selStart, selEnd);
-        }
-      });
-    }
-  };
+      if (options.focusTextarea !== false && selStart !== undefined && selEnd !== undefined) {
+        savedSelectionRangeRef.current = { start: selStart, end: selEnd };
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+            textareaRef.current.setSelectionRange(selStart, selEnd);
+          }
+        });
+      }
+    },
+    [onSave]
+  );
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -205,6 +293,7 @@ export default function EditorArea({
     setContent(val);
     contentRef.current = val;
     onSave(val);
+    updateActiveFormatsAndLink();
   };
 
   const handleUndo = () => {
@@ -233,84 +322,249 @@ export default function EditorArea({
     setCanRedo(redoStackRef.current.length > 0);
   };
 
-  // Section 1: Bold, Italic, Underline wrap/unwrap handler
-  const handleWrapShortcut = (type: 'bold' | 'italic' | 'underline') => {
+  // Section 5: Smooth content-anchored view-mode switching
+  const handleModeSwitch = (targetMode: EditMode) => {
+    if (targetMode === mode) return;
+
+    // 1. Determine top-visible source line before switching
+    let topSourceLine = 1;
     const textarea = textareaRef.current;
-    if (!textarea) return;
+    const liveContainer = liveContainerRef.current;
 
-    const marker = type === 'bold' ? '**' : type === 'italic' ? '_' : '++';
-    const mLen = marker.length;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const current = contentRef.current;
-    const selectedText = current.substring(start, end);
-    const isItalic = type === 'italic';
-
-    // 1. Selection already wrapped inside
-    if (selectedText.length >= 2 * mLen) {
-      let matchesInside = false;
-      if (isItalic) {
-        matchesInside =
-          selectedText.startsWith('_') &&
-          !selectedText.startsWith('__') &&
-          selectedText.endsWith('_') &&
-          !selectedText.endsWith('__');
-      } else {
-        matchesInside = selectedText.startsWith(marker) && selectedText.endsWith(marker);
+    if ((mode === 'source' || mode === 'split') && textarea) {
+      savedSelectionRangeRef.current = {
+        start: textarea.selectionStart,
+        end: textarea.selectionEnd,
+      };
+      const scroll = textarea.scrollTop;
+      const offsets = sourceLineOffsetsRef.current;
+      for (let i = 0; i < offsets.length; i++) {
+        if (offsets[i] <= scroll) {
+          topSourceLine = i + 1;
+        } else {
+          break;
+        }
       }
-
-      if (matchesInside) {
-        const unwrapped = selectedText.slice(mLen, -mLen);
-        const newContent = current.substring(0, start) + unwrapped + current.substring(end);
-        applyEdit(newContent, start, start + unwrapped.length);
-        return;
-      }
-    }
-
-    // 2. Markers immediately outside the selection
-    if (start >= mLen && end + mLen <= current.length) {
-      const before = current.substring(0, start);
-      const after = current.substring(end);
-      let matchesOutside = false;
-      if (isItalic) {
-        matchesOutside =
-          before.endsWith('_') &&
-          !before.endsWith('__') &&
-          after.startsWith('_') &&
-          !after.startsWith('__');
-      } else {
-        matchesOutside = before.endsWith(marker) && after.startsWith(marker);
-      }
-
-      if (matchesOutside) {
-        const newContent = current.substring(0, start - mLen) + selectedText + current.substring(end + mLen);
-        applyEdit(newContent, start - mLen, end - mLen);
-        return;
+    } else if (mode === 'live' && liveContainer) {
+      const elements = Array.from(liveContainer.querySelectorAll('[data-source-line]'));
+      const rect = liveContainer.getBoundingClientRect();
+      for (const el of elements) {
+        const elRect = el.getBoundingClientRect();
+        if (elRect.top - rect.top >= -20) {
+          const l = parseInt(el.getAttribute('data-source-line') || '1', 10);
+          if (l > 0) {
+            topSourceLine = l;
+            break;
+          }
+        }
       }
     }
 
-    // 3. Otherwise, non-empty selection -> wrap; select the whole wrapped text
-    if (selectedText.length > 0) {
-      const wrapped = `${marker}${selectedText}${marker}`;
-      const newContent = current.substring(0, start) + wrapped + current.substring(end);
-      applyEdit(newContent, start, start + wrapped.length);
-      return;
-    }
+    // 2. Hide view momentarily (opacity 0) to avoid jump
+    setIsSwitchingMode(true);
+    setMode(targetMode);
+    localStorage.setItem('notes-view-mode', targetMode);
 
-    // 4. No selection -> insert empty markers with cursor in the middle
-    const empty = `${marker}${marker}`;
-    const newContent = current.substring(0, start) + empty + current.substring(end);
-    applyEdit(newContent, start + mLen, start + mLen);
+    // 3. Restore scroll position anchored to topSourceLine before revealing
+    requestAnimationFrame(() => {
+      measureSourceLineOffsets();
+
+      if (targetMode === 'source' || targetMode === 'split') {
+        const newTextarea = textareaRef.current;
+        if (newTextarea) {
+          const offsets = sourceLineOffsetsRef.current;
+          const targetTop = offsets[topSourceLine - 1] || 0;
+          newTextarea.scrollTop = targetTop;
+
+          // Restore cursor/selection without scrolling away
+          const { start, end } = savedSelectionRangeRef.current;
+          newTextarea.setSelectionRange(start, end);
+          newTextarea.scrollTop = targetTop;
+        }
+      }
+
+      if (targetMode === 'live' || targetMode === 'split') {
+        const targetContainer = targetMode === 'live' ? liveContainerRef.current : previewContainerRef.current;
+        if (targetContainer) {
+          const el = targetContainer.querySelector(`[data-source-line="${topSourceLine}"]`);
+          if (el) {
+            const containerRect = targetContainer.getBoundingClientRect();
+            const elRect = el.getBoundingClientRect();
+            targetContainer.scrollTop = elRect.top - containerRect.top + targetContainer.scrollTop;
+          }
+        }
+      }
+
+      // Smooth fade-in
+      setTimeout(() => {
+        setIsSwitchingMode(false);
+      }, 50);
+    });
   };
 
-  // Section 8c: Ctrl/Cmd+L toggle checkbox
-  const handleCheckboxShortcut = () => {
+  // Section 3: Tab / Shift+Tab indent behavior
+  const handleEditorTabKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const current = contentRef.current;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
+    const isShift = e.shiftKey;
+
+    const result = handleTabIndent(contentRef.current, start, end, isShift);
+    applyEdit(result.newContent, result.selStart, result.selEnd);
+  };
+
+  // Section 7: Update active formatting detection and link detection at cursor
+  const updateActiveFormatsAndLink = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const current = contentRef.current;
+
+    // Check line-level formats
+    const lineStart = current.lastIndexOf('\n', start - 1) + 1;
+    let lineEnd = current.indexOf('\n', start);
+    if (lineEnd === -1) lineEnd = current.length;
+    const line = current.substring(lineStart, lineEnd);
+
+    // Heading
+    const headingMatch = line.match(/^(#{1,6})\s+/);
+    const headingLevel = headingMatch ? headingMatch[1].length : 0;
+
+    // Quote
+    const quote = /^\s*>\s+/.test(line);
+
+    // List
+    let listType: 'bullet' | 'numbered' | 'checkbox' | null = null;
+    if (/^\s*[-*+]\s+\[[ xX]\]\s+/.test(line)) {
+      listType = 'checkbox';
+    } else if (/^\s*\d+[.)]\s+/.test(line)) {
+      listType = 'numbered';
+    } else if (/^\s*[-*+]\s+/.test(line)) {
+      listType = 'bullet';
+    }
+
+    // Inline formats around cursor
+    const checkWrap = (marker: string): boolean => {
+      const mLen = marker.length;
+      if (start >= mLen && current.substring(start - mLen, start) === marker && current.substring(end, end + mLen) === marker) {
+        return true;
+      }
+      const before = current.substring(0, start);
+      const after = current.substring(end);
+      const lastOpen = before.lastIndexOf(marker);
+      const nextClose = after.indexOf(marker);
+      return lastOpen !== -1 && nextClose !== -1 && !before.slice(lastOpen + mLen).includes('\n');
+    };
+
+    const bold = checkWrap('**');
+    const italic = checkWrap('_');
+    const underline = checkWrap('++');
+    const strikethrough = checkWrap('~~');
+    const code = checkWrap('`');
+    const codeBlock = current.slice(0, start).split('```').length % 2 === 0;
+
+    setActiveFormats({
+      headingLevel,
+      bold,
+      italic,
+      underline,
+      strikethrough,
+      code,
+      codeBlock,
+      quote,
+      listType,
+    });
+
+    // Check if cursor is inside an existing link for floating "Open link" button and link maker prefill
+    const links = findLinksInMarkdown(current);
+    const foundLink = links.find((l) => l.index <= start && start <= l.index + l.fullMatch.length);
+
+    if (foundLink) {
+      setActiveExistingLink({
+        text: foundLink.text,
+        url: foundLink.href,
+        isEmbed: foundLink.isEmbed,
+        replaceStart: foundLink.index,
+        replaceEnd: foundLink.index + foundLink.fullMatch.length,
+      });
+
+      // Calculate floating button coordinates in source mode
+      if (start === end && mirrorRef.current && textareaRef.current) {
+        const lineIdx = current.slice(0, foundLink.index).split('\n').length - 1;
+        const lineTop = sourceLineOffsetsRef.current[lineIdx] || 0;
+        const relativeTop = lineTop - textarea.scrollTop;
+        if (relativeTop >= 0 && relativeTop <= textarea.clientHeight) {
+          setFloatingLink({
+            href: foundLink.href,
+            text: foundLink.text,
+            top: relativeTop,
+            left: 20,
+          });
+        } else {
+          setFloatingLink(null);
+        }
+      } else {
+        setFloatingLink(null);
+      }
+    } else {
+      setActiveExistingLink(null);
+      setFloatingLink(null);
+    }
+  };
+
+  // Section 7: Toolbar formatting toggler
+  const handleToggleFormat = (format: string, value?: any) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const current = contentRef.current;
+
+    if (format === 'bold') {
+      handleWrapShortcut('bold');
+    } else if (format === 'italic') {
+      handleWrapShortcut('italic');
+    } else if (format === 'underline') {
+      handleWrapShortcut('underline');
+    } else if (format === 'strikethrough') {
+      handleWrapShortcutCustom('~~');
+    } else if (format === 'code') {
+      handleWrapShortcutCustom('`');
+    } else if (format === 'codeBlock') {
+      const selected = current.substring(start, end);
+      if (selected) {
+        const wrapped = `\`\`\`\n${selected}\n\`\`\``;
+        const newContent = current.substring(0, start) + wrapped + current.substring(end);
+        applyEdit(newContent, start, start + wrapped.length);
+      } else {
+        const empty = `\`\`\`\n\n\`\`\``;
+        const newContent = current.substring(0, start) + empty + current.substring(end);
+        applyEdit(newContent, start + 4, start + 4);
+      }
+    } else if (format === 'quote') {
+      handleToggleLinePrefix('> ');
+    } else if (format === 'heading') {
+      const level = typeof value === 'number' ? value : 1;
+      handleToggleHeading(level);
+    } else if (format === 'list') {
+      const type = value as 'bullet' | 'numbered' | 'checkbox';
+      handleToggleList(type);
+    }
+  };
+
+  const handleToggleHeading = (level: number) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const current = contentRef.current;
 
     const lineStartIndex = current.lastIndexOf('\n', start - 1) + 1;
     const endPos = end > start && current[end - 1] === '\n' ? end - 1 : end;
@@ -320,40 +574,56 @@ export default function EditorArea({
     const block = current.substring(lineStartIndex, lineEndIndex);
     const lines = block.split('\n');
 
-    // Single empty line with cursor -> "- [ ] " with cursor at end
-    if (lines.length === 1 && lines[0].trim() === '') {
-      const indent = lines[0].match(/^\s*/)?.[0] || '';
-      const replacement = `${indent}- [ ] `;
-      const newContent = current.substring(0, lineStartIndex) + replacement + current.substring(lineEndIndex);
-      const newCursor = lineStartIndex + replacement.length;
-      applyEdit(newContent, newCursor, newCursor);
-      return;
+    const prefix = `${'#'.repeat(level)} `;
+    const allHaveLevel = lines.every((l) => l.startsWith(prefix));
+
+    const newLines = lines.map((l) => {
+      const stripped = l.replace(/^#{1,6}\s+/, '');
+      if (allHaveLevel) {
+        return stripped;
+      }
+      return `${prefix}${stripped}`;
+    });
+
+    const replacement = newLines.join('\n');
+    const newContent = current.substring(0, lineStartIndex) + replacement + current.substring(lineEndIndex);
+    if (lines.length > 1) {
+      applyEdit(newContent, lineStartIndex, lineStartIndex + replacement.length);
+    } else {
+      const delta = replacement.length - block.length;
+      applyEdit(newContent, Math.max(lineStartIndex, start + delta), Math.max(lineStartIndex, end + delta));
     }
+  };
 
-    const checkboxRegex = /^(\s*)(?:[-*+]|\d+[.)])\s+\[[ xX]\](?:\s+(.*)|$)/;
-    const nonBlank = lines.filter((l) => l.trim() !== '');
-    const allHaveCheckbox = nonBlank.length > 0 && nonBlank.every((l) => checkboxRegex.test(l));
+  const handleToggleList = (type: 'bullet' | 'numbered' | 'checkbox') => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
 
-    const newLines = lines.map((line) => {
-      if (lines.length > 1 && line.trim() === '') return line;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const current = contentRef.current;
 
-      if (allHaveCheckbox) {
-        // Remove checkbox and marker, leaving plain text
-        const m = line.match(/^(\s*)(?:[-*+]|\d+[.)])\s+\[[ xX]\]\s?(.*)$/);
-        return m ? m[1] + (m[2] || '') : line;
+    const lineStartIndex = current.lastIndexOf('\n', start - 1) + 1;
+    const endPos = end > start && current[end - 1] === '\n' ? end - 1 : end;
+    let lineEndIndex = current.indexOf('\n', endPos);
+    if (lineEndIndex === -1) lineEndIndex = current.length;
+
+    const block = current.substring(lineStartIndex, lineEndIndex);
+    const lines = block.split('\n');
+
+    const listRegex = /^(\s*)(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/;
+
+    const newLines = lines.map((l, i) => {
+      const match = l.match(listRegex);
+      const indent = match ? match[1] : l.match(/^\s*/)?.[0] || '';
+      const text = match ? l.slice(match[0].length) : l.replace(/^\s*/, '');
+
+      if (type === 'bullet') {
+        return `${indent}- ${text}`;
+      } else if (type === 'numbered') {
+        return `${indent}${i + 1}. ${text}`;
       } else {
-        // Add checkbox to lines lacking one
-        if (checkboxRegex.test(line)) return line;
-
-        const bulletMatch = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
-        if (bulletMatch) {
-          return `${bulletMatch[1]}${bulletMatch[2]} [ ] ${bulletMatch[3]}`;
-        }
-        const plainMatch = line.match(/^(\s*)(.*)$/);
-        if (plainMatch) {
-          return `${plainMatch[1]}- [ ] ${plainMatch[2]}`;
-        }
-        return line;
+        return `${indent}- [ ] ${text}`;
       }
     });
 
@@ -363,74 +633,17 @@ export default function EditorArea({
       applyEdit(newContent, lineStartIndex, lineStartIndex + replacement.length);
     } else {
       const delta = replacement.length - block.length;
-      applyEdit(
-        newContent,
-        Math.max(lineStartIndex, start + delta),
-        Math.max(lineStartIndex, end + delta)
-      );
+      applyEdit(newContent, Math.max(lineStartIndex, start + delta), Math.max(lineStartIndex, end + delta));
     }
   };
 
-  // Section 8d: Enter key list auto-continuation / exit
-  const handleEnterKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.nativeEvent.isComposing) return;
-    if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
-
+  const handleToggleLinePrefix = (prefix: string) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const current = contentRef.current;
-    const cursor = textarea.selectionStart;
-
-    const lineStart = current.lastIndexOf('\n', cursor - 1) + 1;
-    let lineEnd = current.indexOf('\n', cursor);
-    if (lineEnd === -1) lineEnd = current.length;
-
-    const beforeCursor = current.substring(lineStart, cursor);
-    const afterCursor = current.substring(cursor, lineEnd);
-
-    // Empty list item -> exit list
-    const emptyMatch = beforeCursor.match(/^(\s*)([-*+]|\d+[.)])(\s*)(?:\[[ xX]\]\s*)?$/);
-    if (emptyMatch && afterCursor.trim() === '') {
-      e.preventDefault();
-      const newContent = current.substring(0, lineStart) + current.substring(lineEnd);
-      applyEdit(newContent, lineStart, lineStart);
-      return;
-    }
-
-    // List item with content -> continue list
-    const listMatch = beforeCursor.match(/^(\s*)([-*+]|\d+([.)]))(\s+)(?:\[([ xX])\](\s*))?(.*)$/);
-    if (listMatch) {
-      e.preventDefault();
-      const indent = listMatch[1];
-      const marker = listMatch[2];
-      const numDelim = listMatch[3];
-      const hasCheckbox = listMatch[5] !== undefined;
-
-      let nextMarker = '';
-      if (numDelim) {
-        const num = parseInt(marker, 10);
-        const nextNum = isNaN(num) ? 1 : num + 1;
-        nextMarker = hasCheckbox ? `${indent}${nextNum}${numDelim} [ ] ` : `${indent}${nextNum}${numDelim} `;
-      } else {
-        nextMarker = hasCheckbox ? `${indent}${marker} [ ] ` : `${indent}${marker} `;
-      }
-
-      const newContent = current.substring(0, cursor) + '\n' + nextMarker + current.substring(cursor);
-      const newCursor = cursor + 1 + nextMarker.length;
-      applyEdit(newContent, newCursor, newCursor);
-    }
-  };
-
-  // Section 8e: Tab / Shift+Tab on list lines
-  const handleTabKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const current = contentRef.current;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
+    const current = contentRef.current;
 
     const lineStartIndex = current.lastIndexOf('\n', start - 1) + 1;
     const endPos = end > start && current[end - 1] === '\n' ? end - 1 : end;
@@ -439,39 +652,137 @@ export default function EditorArea({
 
     const block = current.substring(lineStartIndex, lineEndIndex);
     const lines = block.split('\n');
+    const allHavePrefix = lines.every((l) => l.startsWith(prefix));
 
-    const isListLine = (l: string) => /^\s*(?:[-*+]|\d+[.)])(\s|$)/.test(l);
-    if (!lines.some(isListLine)) {
-      return;
-    }
-
-    e.preventDefault();
-    let newLines: string[];
-    if (!e.shiftKey) {
-      newLines = lines.map((l) => (l.length > 0 ? '  ' + l : l));
-    } else {
-      newLines = lines.map((l) => l.replace(/^ {1,2}/, ''));
-    }
+    const newLines = lines.map((l) => {
+      if (allHavePrefix) {
+        return l.startsWith(prefix) ? l.slice(prefix.length) : l;
+      }
+      return `${prefix}${l}`;
+    });
 
     const replacement = newLines.join('\n');
     const newContent = current.substring(0, lineStartIndex) + replacement + current.substring(lineEndIndex);
-    applyEdit(newContent, lineStartIndex, lineStartIndex + replacement.length);
+    if (lines.length > 1) {
+      applyEdit(newContent, lineStartIndex, lineStartIndex + replacement.length);
+    } else {
+      const delta = replacement.length - block.length;
+      applyEdit(newContent, Math.max(lineStartIndex, start + delta), Math.max(lineStartIndex, end + delta));
+    }
   };
 
-  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter') {
-      handleEnterKey(e);
-      return;
-    }
-    if (e.key === 'Tab') {
-      handleTabKey(e);
+  const handleWrapShortcutCustom = (marker: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const mLen = marker.length;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const current = contentRef.current;
+    const selected = current.substring(start, end);
+
+    if (selected.startsWith(marker) && selected.endsWith(marker) && selected.length >= 2 * mLen) {
+      const unwrapped = selected.slice(mLen, -mLen);
+      const newContent = current.substring(0, start) + unwrapped + current.substring(end);
+      applyEdit(newContent, start, start + unwrapped.length);
       return;
     }
 
-    const modifierPressed = e.ctrlKey || e.metaKey;
-    if (!modifierPressed) return;
+    if (
+      start >= mLen &&
+      end + mLen <= current.length &&
+      current.substring(start - mLen, start) === marker &&
+      current.substring(end, end + mLen) === marker
+    ) {
+      const newContent = current.substring(0, start - mLen) + selected + current.substring(end + mLen);
+      applyEdit(newContent, start - mLen, end - mLen);
+      return;
+    }
+
+    if (selected.length > 0) {
+      const wrapped = `${marker}${selected}${marker}`;
+      const newContent = current.substring(0, start) + wrapped + current.substring(end);
+      applyEdit(newContent, start, start + wrapped.length);
+      return;
+    }
+
+    const empty = `${marker}${marker}`;
+    const newContent = current.substring(0, start) + empty + current.substring(end);
+    applyEdit(newContent, start + mLen, start + mLen);
+  };
+
+  const handleWrapShortcut = (type: 'bold' | 'italic' | 'underline') => {
+    const marker = type === 'bold' ? '**' : type === 'italic' ? '_' : '++';
+    handleWrapShortcutCustom(marker);
+  };
+
+  const handleInsertTable = (rows: number, cols: number) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const current = contentRef.current;
+
+    const header = '| ' + Array.from({ length: cols }, (_, i) => `Column ${i + 1}`).join(' | ') + ' |';
+    const separator = '| ' + Array.from({ length: cols }, () => '---').join(' | ') + ' |';
+    const bodyRows = Array.from({ length: rows - 1 }, () => '| ' + Array.from({ length: cols }, () => ' ').join(' | ') + ' |');
+    const tableText = `\n${header}\n${separator}\n${bodyRows.join('\n')}\n`;
+
+    const newContent = current.substring(0, start) + tableText + current.substring(start);
+    const newCursor = start + tableText.length;
+    applyEdit(newContent, newCursor, newCursor);
+  };
+
+  const handleInsertHr = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const current = contentRef.current;
+    const hrText = '\n---\n';
+    const newContent = current.substring(0, start) + hrText + current.substring(start);
+    applyEdit(newContent, start + hrText.length, start + hrText.length);
+  };
+
+  // Keyboard shortcuts
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab') {
+      handleEditorTabKey(e);
+      return;
+    }
+
+    const modifier = e.ctrlKey || e.metaKey;
+
+    // Ctrl/Cmd+Alt+1...6 (Heading levels H1-H6)
+    if (modifier && e.altKey && !e.shiftKey) {
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= 6) {
+        e.preventDefault();
+        handleToggleHeading(num);
+        return;
+      }
+    }
+
+    if (!modifier) return;
 
     const key = e.key.toLowerCase();
+
+    // Ctrl/Cmd+K (Link maker dialog)
+    if (key === 'k' && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      setLinkMakerEmbed(false);
+      setShowLinkMaker(true);
+      return;
+    }
+
+    // Ctrl/Cmd+Shift+E (Embed dialog pre-checked)
+    if (key === 'e' && e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      setLinkMakerEmbed(true);
+      setShowLinkMaker(true);
+      return;
+    }
+
     if (key === 'z' && !e.shiftKey) {
       e.preventDefault();
       handleUndo();
@@ -504,13 +815,62 @@ export default function EditorArea({
 
     if (key === 'l' && !e.shiftKey && !e.altKey) {
       e.preventDefault();
-      handleCheckboxShortcut();
+      handleToggleList('checkbox');
       return;
     }
   };
 
-  // Section 8b: Toggle checkbox in preview by source line or index fallback
-  const handleToggleCheckboxAtLine = (lineNum: number) => {
+  // Following links from preview or source mode
+  const handleFollowLink = useCallback(
+    (rawHref: string) => {
+      const resolved = resolveLink(notePath, rawHref);
+      if (!resolved.isValid) {
+        setToastMessage('Invalid link');
+        setTimeout(() => setToastMessage(null), 3000);
+        return;
+      }
+
+      if (resolved.isExternal) {
+        window.open(resolved.targetFullPath, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      if (resolved.isAnchorOnly) {
+        const el = document.getElementById(resolved.anchor || '');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' });
+        } else {
+          setToastMessage(`Section #${resolved.anchor} not found`);
+          setTimeout(() => setToastMessage(null), 3000);
+        }
+        return;
+      }
+
+      if (resolved.isFolder) {
+        if (onSelectFolder) {
+          onSelectFolder(resolved.targetFullPath);
+        }
+        return;
+      }
+
+      // Check if note exists
+      const targetNoteExists =
+        knownNotePaths.has(resolved.targetFullPath) ||
+        knownNotePaths.size === 0; // If paths not loaded yet, attempt navigation
+
+      if (!targetNoteExists) {
+        setToastMessage(`Note not found: ${resolved.targetFullPath}`);
+        setTimeout(() => setToastMessage(null), 3000);
+        return;
+      }
+
+      onSelectNote(resolved.targetFullPath, resolved.anchor);
+    },
+    [notePath, knownNotePaths, onSelectNote, onSelectFolder]
+  );
+
+  // Section 8b: Toggle checkbox in preview by source line
+  const handleToggleCheckboxAtLine = useCallback((lineNum: number) => {
     const current = contentRef.current;
     const lines = current.split('\n');
     const lineIdx = lineNum - 1;
@@ -537,136 +897,125 @@ export default function EditorArea({
     const newContent = lines.join('\n');
 
     applyEdit(newContent, undefined, undefined, { focusTextarea: false });
-  };
+  }, [applyEdit]);
 
-  const handleToggleCheckboxByIndex = (index: number) => {
-    const current = contentRef.current;
-    const lines = current.split('\n');
-    const checkboxRegex = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/;
-    let count = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const match = lines[i].match(checkboxRegex);
-      if (match) {
-        if (count === index) {
-          const newMarker = match[2] === ' ' ? '[x]' : '[ ]';
-          lines[i] = lines[i].replace(checkboxRegex, `$1${newMarker}`);
-          const newContent = lines.join('\n');
-          applyEdit(newContent, undefined, undefined, { focusTextarea: false });
-          return;
-        }
-        count++;
-      }
-    }
-  };
-
-  // Keep callback references stable for ReactMarkdown memoized components
-  const callbacksRef = useRef({
-    onWikiLinkClick: (slug: string) => {
-      const originalName = slug.replace(/_/g, ' ');
-      onSelectWikiLink(originalName);
-    },
-    onToggleCheckbox: (line: number) => {
-      handleToggleCheckboxAtLine(line);
-    },
-    onToggleCheckboxByIndex: (index: number) => {
-      handleToggleCheckboxByIndex(index);
-    },
-  });
-
+  // Section 10a: Markdown preview components
+  const sluggerRef = useRef(createSlugger());
   useEffect(() => {
-    callbacksRef.current.onWikiLinkClick = (slug: string) => {
-      const originalName = slug.replace(/_/g, ' ');
-      onSelectWikiLink(originalName);
-    };
-    callbacksRef.current.onToggleCheckbox = (line: number) => {
-      handleToggleCheckboxAtLine(line);
-    };
-    callbacksRef.current.onToggleCheckboxByIndex = (index: number) => {
-      handleToggleCheckboxByIndex(index);
-    };
-  });
+    sluggerRef.current = createSlugger();
+  }, [deferredContent]);
 
-  // Section 10a: Stable markdown components definition
-  const markdownComponents = useMemo(
-    () => ({
+  const markdownComponents = useMemo(() => {
+    return {
       a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
         if (href === '#u') {
           return <u className="underline underline-offset-2">{children}</u>;
         }
-        if (href?.startsWith('#wikilink-')) {
-          const slug = href.replace('#wikilink-', '');
+
+        if (!href) return <a>{children}</a>;
+
+        const resolved = resolveLink(notePath, href);
+
+        // Check broken link
+        const isBroken =
+          !resolved.isExternal &&
+          !resolved.isAnchorOnly &&
+          !resolved.isFolder &&
+          knownNotePaths.size > 0 &&
+          !knownNotePaths.has(resolved.targetFullPath);
+
+        if (isBroken) {
           return (
             <span
-              className="wiki-link"
               onClick={(e) => {
                 e.stopPropagation();
-                callbacksRef.current.onWikiLinkClick(slug);
+                setToastMessage(`Note not found: ${resolved.targetFullPath}`);
+                setTimeout(() => setToastMessage(null), 3000);
               }}
+              className="text-red-500/80 underline decoration-dashed cursor-pointer font-medium hover:text-red-600 transition"
+              title={`Broken link (target not found: ${resolved.targetFullPath})`}
             >
               {children}
             </span>
           );
         }
-        if (href?.startsWith('#')) {
-          return (
-            <a
-              href={href}
-              {...props}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (!href || href === '#') return;
-                const targetId = href.slice(1).toLowerCase();
-                const targetElem =
-                  document.getElementById(targetId) || document.querySelector(`[name="${targetId}"]`);
-                if (targetElem) {
-                  targetElem.scrollIntoView({ behavior: 'smooth' });
-                }
-              }}
-            >
-              {children}
-            </a>
-          );
-        }
+
         return (
           <a
             href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleFollowLink(href);
+            }}
+            className="text-accent underline hover:text-accent-hover font-medium cursor-pointer transition"
             {...props}
           >
             {children}
           </a>
         );
       },
+      img: (props: any) => {
+        const { src, alt } = props;
+        if (src && (src.endsWith('.md') || src.includes('.md#') || src.includes('.md?'))) {
+          return (
+            <NoteEmbed
+              src={src}
+              currentNotePath={notePath}
+              onNavigate={onSelectNote}
+              depth={1}
+            />
+          );
+        }
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        return <img {...props} alt={alt || ''} />;
+      },
       h1: ({ children, node, ...props }: any) => {
-        const id = getNodeText(children).toLowerCase().trim().replace(/[^\w]+/g, '-');
-        return <h1 id={id} data-source-line={node?.position?.start?.line} {...props}>{children}</h1>;
+        const text = getNodeText(children);
+        const slug = sluggerRef.current(text);
+        return <h1 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h1>;
       },
       h2: ({ children, node, ...props }: any) => {
-        const id = getNodeText(children).toLowerCase().trim().replace(/[^\w]+/g, '-');
-        return <h2 id={id} data-source-line={node?.position?.start?.line} {...props}>{children}</h2>;
+        const text = getNodeText(children);
+        const slug = sluggerRef.current(text);
+        return <h2 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h2>;
       },
       h3: ({ children, node, ...props }: any) => {
-        const id = getNodeText(children).toLowerCase().trim().replace(/[^\w]+/g, '-');
-        return <h3 id={id} data-source-line={node?.position?.start?.line} {...props}>{children}</h3>;
+        const text = getNodeText(children);
+        const slug = sluggerRef.current(text);
+        return <h3 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h3>;
       },
       h4: ({ children, node, ...props }: any) => {
-        const id = getNodeText(children).toLowerCase().trim().replace(/[^\w]+/g, '-');
-        return <h4 id={id} data-source-line={node?.position?.start?.line} {...props}>{children}</h4>;
+        const text = getNodeText(children);
+        const slug = sluggerRef.current(text);
+        return <h4 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h4>;
       },
       h5: ({ children, node, ...props }: any) => {
-        const id = getNodeText(children).toLowerCase().trim().replace(/[^\w]+/g, '-');
-        return <h5 id={id} data-source-line={node?.position?.start?.line} {...props}>{children}</h5>;
+        const text = getNodeText(children);
+        const slug = sluggerRef.current(text);
+        return <h5 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h5>;
       },
       h6: ({ children, node, ...props }: any) => {
-        const id = getNodeText(children).toLowerCase().trim().replace(/[^\w]+/g, '-');
-        return <h6 id={id} data-source-line={node?.position?.start?.line} {...props}>{children}</h6>;
+        const text = getNodeText(children);
+        const slug = sluggerRef.current(text);
+        return <h6 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h6>;
       },
-      p: ({ children, node, ...props }: any) => (
-        <p data-source-line={node?.position?.start?.line} {...props}>{children}</p>
-      ),
+      p: ({ children, node, ...props }: any) => {
+        // Obsidian-style block ID support: strip ^id and set id="^id"
+        const text = getNodeText(children);
+        const blockMatch = text.match(/\s+\^([a-zA-Z0-9_-]+)$/);
+        let blockId: string | undefined;
+
+        if (blockMatch) {
+          blockId = `^${blockMatch[1]}`;
+        }
+
+        return (
+          <p id={blockId} data-source-line={node?.position?.start?.line} {...props}>
+            {children}
+          </p>
+        );
+      },
       blockquote: ({ children, node, ...props }: any) => (
         <blockquote data-source-line={node?.position?.start?.line} {...props}>{children}</blockquote>
       ),
@@ -697,16 +1046,7 @@ export default function EditorArea({
             const li = target.closest('li[data-source-line]');
             const lineStr = li?.getAttribute('data-source-line');
             if (lineStr) {
-              callbacksRef.current.onToggleCheckbox(parseInt(lineStr, 10));
-            } else {
-              const root = target.closest('.markdown-body');
-              if (root) {
-                const allCheckboxes = Array.from(root.querySelectorAll('input[type="checkbox"]'));
-                const idx = allCheckboxes.indexOf(target as HTMLInputElement);
-                if (idx !== -1) {
-                  callbacksRef.current.onToggleCheckboxByIndex(idx);
-                }
-              }
+              handleToggleCheckboxAtLine(parseInt(lineStr, 10));
             }
           };
 
@@ -731,9 +1071,8 @@ export default function EditorArea({
         delete restProps.node;
         return <input {...restProps} />;
       },
-    }),
-    []
-  );
+    };
+  }, [notePath, knownNotePaths, handleFollowLink, onSelectNote, handleToggleCheckboxAtLine]);
 
   // Section 5: Measure pane clientHeight with ResizeObserver for scroll-past-the-end
   useEffect(() => {
@@ -787,47 +1126,12 @@ export default function EditorArea({
   };
 
   useEffect(() => {
-    if (mode === 'split') {
+    if (mode === 'split' || mode === 'source') {
       measureSourceLineOffsets();
     }
   }, [content, mode]);
 
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea || mode !== 'split') return;
-
-    const ro = new ResizeObserver(() => {
-      measureSourceLineOffsets();
-    });
-    ro.observe(textarea);
-    return () => ro.disconnect();
-  }, [mode]);
-
-  // Section 3: Measure preview block element anchors
-  const measurePreviewAnchors = () => {
-    const preview = previewContainerRef.current;
-    if (!preview) return;
-
-    const elements = Array.from(preview.querySelectorAll('[data-source-line]'));
-    const previewRect = preview.getBoundingClientRect();
-    const anchors = elements.map((el) => {
-      const line = parseInt(el.getAttribute('data-source-line') || '0', 10);
-      const rect = el.getBoundingClientRect();
-      const top = rect.top - previewRect.top + preview.scrollTop;
-      return { line, top };
-    });
-
-    anchors.sort((a, b) => a.line - b.line);
-    previewAnchorsRef.current = anchors;
-  };
-
-  useEffect(() => {
-    if (mode === 'split') {
-      measurePreviewAnchors();
-    }
-  }, [deferredContent, mode]);
-
-  // Section 3: Synchronize source -> preview
+  // Scroll synchronization between source and preview in Split mode
   const syncSourceToPreview = () => {
     const textarea = textareaRef.current;
     const preview = previewContainerRef.current;
@@ -853,201 +1157,44 @@ export default function EditorArea({
       return;
     }
 
-    const lastOffset = offsets[offsets.length - 1];
-    const anchors = previewAnchorsRef.current;
-    if (anchors && anchors.length > 0 && sourceScroll >= lastOffset) {
-      const lastAnchorTop = anchors[anchors.length - 1].top;
-      const progress = maxSource > lastOffset ? (sourceScroll - lastOffset) / (maxSource - lastOffset) : 1;
-      preview.scrollTop = Math.max(0, Math.min(maxPreview, lastAnchorTop + progress * (maxPreview - lastAnchorTop)));
-      return;
-    }
-
-    let low = 0;
-    let high = offsets.length - 1;
     let lineIdx = 0;
-    while (low <= high) {
-      const mid = Math.floor((low + high) / 2);
-      if (offsets[mid] <= sourceScroll) {
-        lineIdx = mid;
-        low = mid + 1;
+    for (let i = 0; i < offsets.length; i++) {
+      if (offsets[i] <= sourceScroll) {
+        lineIdx = i;
       } else {
-        high = mid - 1;
+        break;
       }
     }
 
     const nextOffset = lineIdx + 1 < offsets.length ? offsets[lineIdx + 1] : offsets[lineIdx] + 24;
-    const lineProgress =
-      nextOffset > offsets[lineIdx]
-        ? (sourceScroll - offsets[lineIdx]) / (nextOffset - offsets[lineIdx])
-        : 0;
-    const currentSourceLine = lineIdx + 1 + lineProgress;
+    const progress = nextOffset > offsets[lineIdx] ? (sourceScroll - offsets[lineIdx]) / (nextOffset - offsets[lineIdx]) : 0;
+    const currentLine = lineIdx + 1 + progress;
 
-
-    let a1 = anchors[0];
-    let a2 = anchors[anchors.length - 1];
-
-    for (let i = 0; i < anchors.length; i++) {
-      if (anchors[i].line <= currentSourceLine) {
-        a1 = anchors[i];
-      }
-      if (anchors[i].line > currentSourceLine) {
-        a2 = anchors[i];
-        break;
-      }
+    const targetEl = preview.querySelector(`[data-source-line="${Math.round(currentLine)}"]`);
+    if (targetEl) {
+      const pRect = preview.getBoundingClientRect();
+      const elRect = targetEl.getBoundingClientRect();
+      preview.scrollTop = elRect.top - pRect.top + preview.scrollTop;
+    } else {
+      preview.scrollTop = (sourceScroll / maxSource) * maxPreview;
     }
-
-    if (a1 === a2 || a2.line === a1.line) {
-      preview.scrollTop = a1.top;
-      return;
-    }
-
-    const anchorProgress = (currentSourceLine - a1.line) / (a2.line - a1.line);
-    const targetTop = a1.top + anchorProgress * (a2.top - a1.top);
-    preview.scrollTop = Math.max(0, Math.min(maxPreview, targetTop));
-  };
-
-  // Section 3: Synchronize preview -> source
-  const syncPreviewToSource = () => {
-    const textarea = textareaRef.current;
-    const preview = previewContainerRef.current;
-    if (!textarea || !preview) return;
-
-    const maxSource = textarea.scrollHeight - textarea.clientHeight;
-    const maxPreview = preview.scrollHeight - preview.clientHeight;
-    if (maxSource <= 0 || maxPreview <= 0) return;
-
-    const previewScroll = preview.scrollTop;
-    if (previewScroll <= 0) {
-      textarea.scrollTop = 0;
-      return;
-    }
-    if (previewScroll >= maxPreview - 1) {
-      textarea.scrollTop = maxSource;
-      return;
-    }
-
-    const anchors = previewAnchorsRef.current;
-    if (!anchors || anchors.length === 0) {
-      textarea.scrollTop = (previewScroll / maxPreview) * maxSource;
-      return;
-    }
-
-    const offsets = sourceLineOffsetsRef.current;
-    if (offsets && offsets.length > 0) {
-      const lastAnchorTop = anchors[anchors.length - 1].top;
-      if (previewScroll >= lastAnchorTop) {
-        const lastLineOffset = offsets[offsets.length - 1];
-        const progress = maxPreview > lastAnchorTop ? (previewScroll - lastAnchorTop) / (maxPreview - lastAnchorTop) : 1;
-        textarea.scrollTop = Math.max(0, Math.min(maxSource, lastLineOffset + progress * (maxSource - lastLineOffset)));
-        return;
-      }
-    }
-
-    let a1 = anchors[0];
-    let a2 = anchors[anchors.length - 1];
-    for (let i = 0; i < anchors.length; i++) {
-      if (anchors[i].top <= previewScroll) {
-        a1 = anchors[i];
-      }
-      if (anchors[i].top > previewScroll) {
-        a2 = anchors[i];
-        break;
-      }
-    }
-
-    if (a1 === a2 || a2.top === a1.top) {
-      const line = a1.line;
-      if (offsets && line - 1 < offsets.length) {
-        textarea.scrollTop = offsets[line - 1];
-      }
-      return;
-    }
-
-    const anchorProgress = (previewScroll - a1.top) / (a2.top - a1.top);
-    const targetSourceLine = a1.line + anchorProgress * (a2.line - a1.line);
-
-    if (!offsets || offsets.length === 0) {
-      textarea.scrollTop = (previewScroll / maxPreview) * maxSource;
-      return;
-    }
-
-    const baseLine = Math.floor(targetSourceLine);
-    const frac = targetSourceLine - baseLine;
-    const baseIdx = Math.max(0, Math.min(offsets.length - 1, baseLine - 1));
-    const nextIdx = Math.min(offsets.length - 1, baseIdx + 1);
-    const targetTop = offsets[baseIdx] + frac * (offsets[nextIdx] - offsets[baseIdx]);
-    textarea.scrollTop = Math.max(0, Math.min(maxSource, targetTop));
   };
 
   const handleSourceScroll = () => {
-    if (activeScrollOrigin.current === 'preview') return;
-    activeScrollOrigin.current = 'source';
+    if (mode === 'split') {
+      if (activeScrollOrigin.current === 'preview') return;
+      activeScrollOrigin.current = 'source';
 
-    const target = textareaRef.current;
-    if (target) {
-      const max = target.scrollHeight - target.clientHeight;
-      if (max > 0) scrollRatioRef.current = target.scrollTop / max;
-    }
-
-    if (mode !== 'split') {
-      activeScrollOrigin.current = null;
-      return;
-    }
-
-    if (rafId.current) cancelAnimationFrame(rafId.current);
-    rafId.current = requestAnimationFrame(() => {
-      syncSourceToPreview();
+      if (rafId.current) cancelAnimationFrame(rafId.current);
       rafId.current = requestAnimationFrame(() => {
-        activeScrollOrigin.current = null;
+        syncSourceToPreview();
+        rafId.current = requestAnimationFrame(() => {
+          activeScrollOrigin.current = null;
+        });
       });
-    });
-  };
-
-  const handlePreviewScroll = () => {
-    if (activeScrollOrigin.current === 'source') return;
-    activeScrollOrigin.current = 'preview';
-
-    const target = previewContainerRef.current || liveContainerRef.current;
-    if (target) {
-      const max = target.scrollHeight - target.clientHeight;
-      if (max > 0) scrollRatioRef.current = target.scrollTop / max;
     }
-
-    if (mode !== 'split') {
-      activeScrollOrigin.current = null;
-      return;
-    }
-
-    if (rafId.current) cancelAnimationFrame(rafId.current);
-    rafId.current = requestAnimationFrame(() => {
-      syncPreviewToSource();
-      rafId.current = requestAnimationFrame(() => {
-        activeScrollOrigin.current = null;
-      });
-    });
+    updateActiveFormatsAndLink();
   };
-
-  // Synchronize scroll position across mode transitions
-  useEffect(() => {
-    const ratio = scrollRatioRef.current;
-    if (ratio <= 0) return;
-
-    const timer = setTimeout(() => {
-      if ((mode === 'source' || mode === 'split') && textareaRef.current) {
-        const max = textareaRef.current.scrollHeight - textareaRef.current.clientHeight;
-        if (max > 0) {
-          textareaRef.current.scrollTop = ratio * max;
-        }
-      } else if (mode === 'live' && liveContainerRef.current) {
-        const max = liveContainerRef.current.scrollHeight - liveContainerRef.current.clientHeight;
-        if (max > 0) {
-          liveContainerRef.current.scrollTop = ratio * max;
-        }
-      }
-    }, 50);
-
-    return () => clearTimeout(timer);
-  }, [mode]);
 
   // Word count calculations
   const getWordCount = (text: string) => {
@@ -1055,27 +1202,19 @@ export default function EditorArea({
     return text.trim().split(/\s+/).length;
   };
 
-  const getCharCount = (text: string) => {
-    return text.length;
-  };
-
   const wordCount = getWordCount(content);
-  const charCount = getCharCount(content);
+  const charCount = content.length;
   const readTime = Math.ceil(wordCount / 200);
   const disableHeavyPreview = isMobile && content.length > 120000;
 
   const handleGoalSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const val = parseInt(goalInput);
+    const val = parseInt(goalInput, 10);
     if (!isNaN(val) && val >= 0) {
       setWordGoal(val);
     }
     setShowGoalDialog(false);
   };
-
-  // Format note path display
-  const noteName = notePath.split('/').pop()?.replace('.md', '') || 'Untitled';
-  const folderPath = notePath.split('/').slice(0, -1).join(' > ');
 
   return (
     <div ref={editorContainerRef} className="flex flex-col flex-1 h-full w-full overflow-hidden bg-card-bg">
@@ -1096,12 +1235,22 @@ export default function EditorArea({
         }}
       />
 
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="absolute top-16 right-4 z-50 flex items-center gap-2 px-3 py-2 bg-red-600 text-white text-xs font-semibold rounded-xl shadow-xl animate-in fade-in slide-in-from-top-2 duration-150">
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Workspace Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 p-3 sm:p-4 border-b border-border-theme bg-card-bg z-10 shrink-0">
-        <div className="flex items-center gap-1.5 text-xs text-text-muted truncate min-w-0 max-w-full">
-          {folderPath && <span className="opacity-75 truncate max-w-[120px] sm:max-w-none">{folderPath} &gt; </span>}
-          <span className="font-bold text-text-main text-sm truncate">{noteName}</span>
-        </div>
+        {/* Interactive Breadcrumb Navigator (§1) */}
+        <BreadcrumbNavigator
+          notePath={notePath}
+          projects={projects}
+          activeProjectTree={activeProjectTree}
+          onSelectNote={onSelectNote}
+        />
 
         <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-end shrink-0">
           {/* Save Status Indicator */}
@@ -1139,14 +1288,14 @@ export default function EditorArea({
             <Redo2 size={16} />
           </button>
 
-          {/* Mode Selector */}
+          {/* Mode Selector (§5) */}
           <div className="flex p-1 bg-sidebar-bg rounded-xl border border-border-theme/40">
             <button
               className={`
                 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition select-none
                 ${mode === 'source' ? 'bg-card-bg text-accent shadow-sm border border-border-theme/40' : 'text-text-muted hover:text-text-main'}
               `}
-              onClick={() => setMode('source')}
+              onClick={() => handleModeSwitch('source')}
               title="Markdown Source"
             >
               <FileEdit size={12} />
@@ -1157,7 +1306,7 @@ export default function EditorArea({
                 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition select-none
                 ${mode === 'split' ? 'bg-card-bg text-accent shadow-sm border border-border-theme/40' : 'text-text-muted hover:text-text-main'}
               `}
-              onClick={() => setMode('split')}
+              onClick={() => handleModeSwitch('split')}
               title="Split Screen"
             >
               <Columns size={12} />
@@ -1168,7 +1317,7 @@ export default function EditorArea({
                 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition select-none
                 ${mode === 'live' ? 'bg-card-bg text-accent shadow-sm border border-border-theme/40' : 'text-text-muted hover:text-text-main'}
               `}
-              onClick={() => setMode('live')}
+              onClick={() => handleModeSwitch('live')}
               title="Live Preview"
             >
               <Eye size={12} />
@@ -1178,17 +1327,62 @@ export default function EditorArea({
         </div>
       </div>
 
+      {/* Formatting Toolbar (§7) — Shown in Source & Split modes, hidden in Live Preview */}
+      {mode !== 'live' && (
+        <FormattingToolbar
+          activeFormats={activeFormats}
+          onToggleFormat={handleToggleFormat}
+          onInsertTable={handleInsertTable}
+          onInsertHr={handleInsertHr}
+          onOpenLinkMaker={(isEmbed) => {
+            setLinkMakerEmbed(!!isEmbed);
+            setShowLinkMaker(true);
+          }}
+        />
+      )}
+
       {/* Editor Body */}
-      <div className="flex-1 w-full h-full overflow-hidden flex">
+      <div
+        className={`flex-1 w-full h-full overflow-hidden flex relative transition-opacity duration-150 ${
+          isSwitchingMode ? 'opacity-0' : 'opacity-100'
+        }`}
+      >
+        {/* Floating "Open link" button in Source mode (§6.5) */}
+        {floatingLink && (mode === 'source' || mode === 'split') && (
+          <div
+            style={{
+              position: 'absolute',
+              top: `${Math.max(8, floatingLink.top - 28)}px`,
+              right: '24px',
+              zIndex: 30,
+            }}
+            className="animate-in fade-in zoom-in-95 duration-100"
+          >
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => handleFollowLink(floatingLink.href)}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-accent text-white text-xs font-bold rounded-lg shadow-lg hover:bg-accent-hover transition cursor-pointer select-none"
+              title={`Open link: ${floatingLink.href}`}
+            >
+              <span>Open link</span>
+              <ExternalLink size={12} />
+            </button>
+          </div>
+        )}
+
         {mode === 'source' && (
           <div className="flex-1 h-full flex flex-col">
             <textarea
               ref={textareaRef}
-              className="w-full h-full resize-none p-4 sm:p-[27px] bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto"
+              className="w-full h-full resize-none p-4 sm:p-[27px] bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto text-base sm:text-sm"
               style={{ paddingBottom: `${bottomPadding}px` }}
               value={content}
               onChange={handleChange}
               onKeyDown={handleEditorKeyDown}
+              onKeyUp={updateActiveFormatsAndLink}
+              onMouseUp={updateActiveFormatsAndLink}
+              onSelect={updateActiveFormatsAndLink}
               onScroll={handleSourceScroll}
               placeholder="Start writing in markdown..."
             />
@@ -1200,11 +1394,14 @@ export default function EditorArea({
             <div className="flex-1 min-h-0 h-1/2 lg:h-full flex flex-col overflow-hidden">
               <textarea
                 ref={textareaRef}
-                className="w-full h-full resize-none p-4 sm:p-[27px] bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto"
+                className="w-full h-full resize-none p-4 sm:p-[27px] bg-transparent text-text-main placeholder-text-muted border-none outline-none focus:ring-0 overflow-y-auto text-base sm:text-sm"
                 style={{ paddingBottom: `${bottomPadding}px` }}
                 value={content}
                 onChange={handleChange}
                 onKeyDown={handleEditorKeyDown}
+                onKeyUp={updateActiveFormatsAndLink}
+                onMouseUp={updateActiveFormatsAndLink}
+                onSelect={updateActiveFormatsAndLink}
                 onScroll={handleSourceScroll}
                 placeholder="Start writing in markdown..."
               />
@@ -1212,7 +1409,6 @@ export default function EditorArea({
             <MarkdownPreview
               content={deferredContent}
               components={markdownComponents}
-              onScroll={handlePreviewScroll}
               containerRef={previewContainerRef}
               bottomPadding={bottomPadding}
               disableHeavyPreview={disableHeavyPreview}
@@ -1225,7 +1421,6 @@ export default function EditorArea({
           <MarkdownPreview
             content={deferredContent}
             components={markdownComponents}
-            onScroll={handlePreviewScroll}
             containerRef={liveContainerRef}
             bottomPadding={bottomPadding}
             disableHeavyPreview={disableHeavyPreview}
@@ -1234,31 +1429,43 @@ export default function EditorArea({
         )}
       </div>
 
-      {/* Stats Footer */}
-      <div className="h-10 border-t border-border-theme bg-card-bg flex items-center justify-between px-3 sm:px-6 text-xs text-text-muted select-none">
+      {/* Stats & Backlinks Footer */}
+      <div className="h-10 border-t border-border-theme bg-card-bg flex items-center justify-between px-3 sm:px-6 text-xs text-text-muted select-none shrink-0">
         <div className="flex items-center gap-2 sm:gap-4">
           <span>{wordCount} words</span>
           <span className="hidden sm:inline">{charCount} characters</span>
           <span className="hidden sm:inline">{readTime} min read</span>
         </div>
 
-        {wordGoal > 0 && (
-          <div className="flex items-center gap-2">
-            <span>Goal: {wordCount} / {wordGoal} words</span>
-            <div className="w-24 h-1.5 bg-sidebar-bg rounded-full overflow-hidden" title={`${Math.min(100, Math.round((wordCount / wordGoal) * 100))}% completed`}>
+        <div className="flex items-center gap-3 sm:gap-5">
+          {/* Goal Indicator */}
+          {wordGoal > 0 && (
+            <div className="flex items-center gap-2">
+              <span>Goal: {wordCount} / {wordGoal} words</span>
               <div
-                className="h-full bg-accent transition-all duration-300"
-                style={{ width: `${Math.min(100, (wordCount / wordGoal) * 100)}%` }}
-              />
+                className="w-24 h-1.5 bg-sidebar-bg rounded-full overflow-hidden"
+                title={`${Math.min(100, Math.round((wordCount / wordGoal) * 100))}% completed`}
+              >
+                <div
+                  className="h-full bg-accent transition-all duration-300"
+                  style={{ width: `${Math.min(100, (wordCount / wordGoal) * 100)}%` }}
+                />
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Backlinks Panel (§6.9) */}
+          <BacklinksPanel notePath={notePath} onSelectNote={onSelectNote} />
+        </div>
       </div>
 
       {/* Goal Modal */}
       {showGoalDialog && (
         <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleGoalSubmit} className="bg-card-bg border border-border-theme w-full max-w-md rounded-xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+          <form
+            onSubmit={handleGoalSubmit}
+            className="bg-card-bg border border-border-theme w-full max-w-md rounded-xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150"
+          >
             <div className="text-lg font-bold text-text-main">Set Writing Word Goal</div>
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-text-muted">Target Word Count (0 to disable)</label>
@@ -1289,6 +1496,44 @@ export default function EditorArea({
             </div>
           </form>
         </div>
+      )}
+
+      {/* Link Maker Modal (§6.3) */}
+      {showLinkMaker && (
+        <LinkMakerModal
+          isOpen={showLinkMaker}
+          onClose={() => setShowLinkMaker(false)}
+          onSubmit={(markdown, replaceStart, replaceEnd) => {
+            const textarea = textareaRef.current;
+            const current = contentRef.current;
+            const sStart = replaceStart !== undefined ? replaceStart : textarea?.selectionStart || 0;
+            const sEnd = replaceEnd !== undefined ? replaceEnd : textarea?.selectionEnd || 0;
+
+            const newContent = current.substring(0, sStart) + markdown + current.substring(sEnd);
+            const newCursor = sStart + markdown.length;
+            applyEdit(newContent, newCursor, newCursor);
+          }}
+          currentNotePath={notePath}
+          currentContent={content}
+          selectedText={
+            textareaRef.current
+              ? content.substring(textareaRef.current.selectionStart, textareaRef.current.selectionEnd)
+              : ''
+          }
+          cursorOffset={textareaRef.current?.selectionStart || 0}
+          existingLinkData={activeExistingLink}
+          projects={projects}
+          precheckEmbed={linkMakerEmbed}
+          onAppendBlockIdToCurrentNote={(line, blockId) => {
+            const lines = contentRef.current.split('\n');
+            const lineIdx = line - 1;
+            if (lineIdx >= 0 && lineIdx < lines.length) {
+              lines[lineIdx] = `${lines[lineIdx].trimEnd()} ^${blockId}`;
+              const updated = lines.join('\n');
+              applyEdit(updated, textareaRef.current?.selectionStart, textareaRef.current?.selectionEnd);
+            }
+          }}
+        />
       )}
     </div>
   );
