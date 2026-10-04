@@ -156,19 +156,22 @@ export default function LinkMakerModal({
   };
 
   const handleSectionChange = async (value: string) => {
-    setSelectedSection(value);
-
     // If user selected a paragraph without existing ID (marked with "need_id:<line>")
     if (value.startsWith('need_id:')) {
       const lineNum = parseInt(value.split(':')[1], 10);
       const randomId = Math.random().toString(36).substring(2, 8);
+
+      // Immediately update paragraphs state so the option with #^randomId exists right away and stays selected
+      setParagraphs((prev) =>
+        prev.map((p) => (p.line === lineNum ? { ...p, existingId: randomId } : p))
+      );
+      setSelectedSection(`#^${randomId}`);
 
       if (targetFullPath === currentNotePath) {
         // Append in current editor
         if (onAppendBlockIdToCurrentNote) {
           onAppendBlockIdToCurrentNote(lineNum, randomId);
         }
-        setSelectedSection(`#^${randomId}`);
       } else {
         // Save to target note via API
         try {
@@ -183,12 +186,19 @@ export default function LinkMakerModal({
           });
           if (res.ok) {
             const data = await res.json();
-            setSelectedSection(`#^${data.id}`);
+            if (data.id && data.id !== randomId) {
+              setParagraphs((prev) =>
+                prev.map((p) => (p.line === lineNum ? { ...p, existingId: data.id } : p))
+              );
+              setSelectedSection(`#^${data.id}`);
+            }
           }
         } catch (err) {
           console.error('Failed to create block ID in target note:', err);
         }
       }
+    } else {
+      setSelectedSection(value);
     }
   };
 
@@ -210,16 +220,20 @@ export default function LinkMakerModal({
     // Default text if empty
     let finalText = linkText.trim();
     if (!finalText) {
+      const resolved = resolveLink(currentNotePath, targetHref);
+      const name = resolved.targetFullPath.split('/').pop()?.replace('.md', '') || 'Note';
+
       if (sectionAnchor.startsWith('#^')) {
-        finalText = sectionAnchor.slice(2);
+        const blockId = sectionAnchor.slice(2);
+        const foundP = paragraphs.find((p) => p.existingId === blockId);
+        const snippet = foundP ? (foundP.text.length > 35 ? `${foundP.text.slice(0, 35)}...` : foundP.text) : '';
+        finalText = snippet ? `${name} > ${snippet}` : name;
       } else if (sectionAnchor.startsWith('#')) {
         const foundH = headings.find((h) => `#${h.slug}` === sectionAnchor);
-        finalText = foundH ? foundH.text : sectionAnchor.slice(1);
+        finalText = foundH ? `${name} > ${foundH.text}` : name;
       } else if (targetHref.startsWith('http')) {
         finalText = targetHref;
       } else {
-        const resolved = resolveLink(currentNotePath, targetHref);
-        const name = resolved.targetFullPath.split('/').pop()?.replace('.md', '') || 'Link';
         finalText = name;
       }
     }

@@ -131,11 +131,10 @@ export default function FormattingToolbar({
           type="button"
           onPointerDown={preventBlur}
           onClick={() => setOpenDropdown((cur) => (cur === 'heading' ? null : 'heading'))}
-          className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold transition ${
-            activeFormats.headingLevel > 0
+          className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold transition ${activeFormats.headingLevel > 0
               ? 'bg-accent/15 text-accent border border-accent/30'
               : 'text-text-muted hover:text-text-main hover:bg-card-hover'
-          }`}
+            }`}
           title="Headings (Ctrl/Cmd+Alt+1–6)"
         >
           <span>{headingLabel}</span>
@@ -150,11 +149,10 @@ export default function FormattingToolbar({
                 type="button"
                 onPointerDown={preventBlur}
                 onClick={() => handleApplyHeading(lvl)}
-                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between transition ${
-                  activeFormats.headingLevel === lvl
+                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between transition ${activeFormats.headingLevel === lvl
                     ? 'bg-accent/15 text-accent'
                     : 'text-text-main hover:bg-card-hover'
-                }`}
+                  }`}
               >
                 <span>H{lvl}</span>
                 <span className="text-[10px] text-text-muted opacity-60">^{lvl}</span>
@@ -171,11 +169,10 @@ export default function FormattingToolbar({
         type="button"
         onPointerDown={preventBlur}
         onClick={() => onToggleFormat('bold')}
-        className={`p-1.5 rounded-lg text-xs transition ${
-          activeFormats.bold
+        className={`p-1.5 rounded-lg text-xs transition ${activeFormats.bold
             ? 'bg-accent/15 text-accent border border-accent/30 font-bold'
             : 'text-text-muted hover:text-text-main hover:bg-card-hover'
-        }`}
+          }`}
         title="Bold (Ctrl/Cmd+B)"
       >
         <Bold size={15} />
@@ -186,11 +183,10 @@ export default function FormattingToolbar({
         type="button"
         onPointerDown={preventBlur}
         onClick={() => onToggleFormat('italic')}
-        className={`p-1.5 rounded-lg text-xs transition ${
-          activeFormats.italic
+        className={`p-1.5 rounded-lg text-xs transition ${activeFormats.italic
             ? 'bg-accent/15 text-accent border border-accent/30 font-bold'
             : 'text-text-muted hover:text-text-main hover:bg-card-hover'
-        }`}
+          }`}
         title="Italic (Ctrl/Cmd+I)"
       >
         <Italic size={15} />
@@ -201,11 +197,10 @@ export default function FormattingToolbar({
         type="button"
         onPointerDown={preventBlur}
         onClick={() => onToggleFormat('underline')}
-        className={`p-1.5 rounded-lg text-xs transition ${
-          activeFormats.underline
+        className={`p-1.5 rounded-lg text-xs transition ${activeFormats.underline
             ? 'bg-accent/15 text-accent border border-accent/30 font-bold'
             : 'text-text-muted hover:text-text-main hover:bg-card-hover'
-        }`}
+          }`}
         title="Underline (Ctrl/Cmd+U)"
       >
         <Underline size={15} />
@@ -217,11 +212,10 @@ export default function FormattingToolbar({
           type="button"
           onPointerDown={preventBlur}
           onClick={() => setOpenDropdown((cur) => (cur === 'more_text' ? null : 'more_text'))}
-          className={`flex items-center gap-0.5 p-1.5 rounded-lg text-xs transition ${
-            activeFormats.strikethrough || activeFormats.code
+          className={`flex items-center gap-0.5 p-1.5 rounded-lg text-xs transition ${activeFormats.strikethrough || activeFormats.code
               ? 'bg-accent/15 text-accent border border-accent/30 font-bold'
               : 'text-text-muted hover:text-text-main hover:bg-card-hover'
-          }`}
+            }`}
           title="More Text Styles"
         >
           <Strikethrough size={15} />
@@ -237,11 +231,10 @@ export default function FormattingToolbar({
                 onToggleFormat('strikethrough');
                 setOpenDropdown(null);
               }}
-              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition ${
-                activeFormats.strikethrough
+              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition ${activeFormats.strikethrough
                   ? 'bg-accent/15 text-accent font-semibold'
                   : 'text-text-main hover:bg-card-hover'
-              }`}
+                }`}
             >
               <Strikethrough size={14} />
               <span>Strikethrough</span>
@@ -253,11 +246,10 @@ export default function FormattingToolbar({
                 onToggleFormat('code');
                 setOpenDropdown(null);
               }}
-              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition ${
-                activeFormats.code
+              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition ${activeFormats.code
                   ? 'bg-accent/15 text-accent font-semibold'
                   : 'text-text-main hover:bg-card-hover'
-              }`}
+                }`}
             >
               <Code size={14} />
               <span>Inline Code</span>
@@ -273,11 +265,10 @@ export default function FormattingToolbar({
         type="button"
         onPointerDown={preventBlur}
         onClick={() => onToggleFormat('codeBlock')}
-        className={`hidden sm:inline-flex p-1.5 rounded-lg text-xs transition ${
-          activeFormats.codeBlock
+        className={`hidden sm:inline-flex p-1.5 rounded-lg text-xs transition ${activeFormats.codeBlock
             ? 'bg-accent/15 text-accent border border-accent/30 font-bold'
             : 'text-text-muted hover:text-text-main hover:bg-card-hover'
-        }`}
+          }`}
         title="Code Block (```)"
       >
         <SquareCode size={15} />
@@ -288,11 +279,10 @@ export default function FormattingToolbar({
         type="button"
         onPointerDown={preventBlur}
         onClick={() => onToggleFormat('quote')}
-        className={`p-1.5 rounded-lg text-xs transition ${
-          activeFormats.quote
+        className={`p-1.5 rounded-lg text-xs transition ${activeFormats.quote
             ? 'bg-accent/15 text-accent border border-accent/30 font-bold'
             : 'text-text-muted hover:text-text-main hover:bg-card-hover'
-        }`}
+          }`}
         title="Blockquote (>)"
       >
         <Quote size={15} />
@@ -304,11 +294,10 @@ export default function FormattingToolbar({
           type="button"
           onPointerDown={preventBlur}
           onClick={() => handleApplyList(lastListType)}
-          className={`p-1.5 rounded-l-lg text-xs transition ${
-            activeFormats.listType
+          className={`p-1.5 rounded-l-lg text-xs transition ${activeFormats.listType
               ? 'bg-accent/15 text-accent border border-accent/30 font-bold'
               : 'text-text-muted hover:text-text-main hover:bg-card-hover'
-          }`}
+            }`}
           title={`List: ${lastListType}`}
         >
           {lastListType === 'bullet' && <List size={15} />}
@@ -330,11 +319,10 @@ export default function FormattingToolbar({
               type="button"
               onPointerDown={preventBlur}
               onClick={() => handleApplyList('bullet')}
-              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition ${
-                activeFormats.listType === 'bullet'
+              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition ${activeFormats.listType === 'bullet'
                   ? 'bg-accent/15 text-accent font-semibold'
                   : 'text-text-main hover:bg-card-hover'
-              }`}
+                }`}
             >
               <List size={14} />
               <span>Bullet List</span>
@@ -343,11 +331,10 @@ export default function FormattingToolbar({
               type="button"
               onPointerDown={preventBlur}
               onClick={() => handleApplyList('numbered')}
-              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition ${
-                activeFormats.listType === 'numbered'
+              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition ${activeFormats.listType === 'numbered'
                   ? 'bg-accent/15 text-accent font-semibold'
                   : 'text-text-main hover:bg-card-hover'
-              }`}
+                }`}
             >
               <ListOrdered size={14} />
               <span>Numbered List</span>
@@ -356,11 +343,10 @@ export default function FormattingToolbar({
               type="button"
               onPointerDown={preventBlur}
               onClick={() => handleApplyList('checkbox')}
-              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition ${
-                activeFormats.listType === 'checkbox'
+              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition ${activeFormats.listType === 'checkbox'
                   ? 'bg-accent/15 text-accent font-semibold'
                   : 'text-text-main hover:bg-card-hover'
-              }`}
+                }`}
             >
               <CheckSquare size={14} />
               <span>Task List (Ctrl+L)</span>
@@ -391,7 +377,7 @@ export default function FormattingToolbar({
             <div className="text-xs font-bold text-text-main">Insert Table</div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
-                <label className="text-[10px] text-text-muted">Rows (max 20)</label>
+                <label className="text-[10px] text-text-muted">Rows</label>
                 <input
                   type="number"
                   min="1"
@@ -402,7 +388,7 @@ export default function FormattingToolbar({
                 />
               </div>
               <div>
-                <label className="text-[10px] text-text-muted">Columns (max 10)</label>
+                <label className="text-[10px] text-text-muted">Columns</label>
                 <input
                   type="number"
                   min="1"

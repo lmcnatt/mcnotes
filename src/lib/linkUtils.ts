@@ -158,7 +158,7 @@ export function resolveLink(fromNotePath: string, rawHref: string): ResolvedLink
   if (rawHref.startsWith('#')) {
     return {
       targetFullPath: fromNotePath,
-      anchor: rawHref.slice(1),
+      anchor: decodeURIComponent(rawHref.slice(1)),
       isFolder: false,
       isExternal: false,
       isAnchorOnly: true,
@@ -169,7 +169,7 @@ export function resolveLink(fromNotePath: string, rawHref: string): ResolvedLink
   // Separate path and hash anchor
   const hashIdx = rawHref.indexOf('#');
   const rawPath = hashIdx !== -1 ? rawHref.substring(0, hashIdx) : rawHref;
-  const rawAnchor = hashIdx !== -1 ? rawHref.substring(hashIdx + 1) : undefined;
+  const rawAnchor = hashIdx !== -1 ? decodeURIComponent(rawHref.substring(hashIdx + 1)) : undefined;
 
   const isFolder = rawPath.endsWith('/');
   const decodedPath = decodeURI(rawPath);

@@ -15,6 +15,7 @@ interface NoteEmbedProps {
 }
 
 const MAX_EMBED_DEPTH = 3;
+const EMPTY_CHAIN: string[] = [];
 
 /**
  * Extracts the requested section from markdown content:
@@ -22,33 +23,40 @@ const MAX_EMBED_DEPTH = 3;
  * - Heading section: from that heading until the next heading of same or higher level
  * - Block: paragraph ending with ^blockid
  */
-function extractEmbedContent(content: string, anchor?: string): { title: string; markdown: string } {
+function extractEmbedContent(
+  content: string,
+  anchor?: string,
+  targetFullPath?: string
+): { title: string; markdown: string } {
+  const fileName = targetFullPath ? targetFullPath.split('/').pop()?.replace('.md', '') : '';
+  const firstH1 = content.split('\n').find((l) => l.startsWith('# '));
+  const fileTitle = firstH1 ? firstH1.substring(2).trim() : (fileName || 'Note');
+
   if (!anchor) {
-    const firstH1 = content.split('\n').find((l) => l.startsWith('# '));
-    const title = firstH1 ? firstH1.substring(2).trim() : 'Note';
-    return { title, markdown: content };
+    return { title: fileTitle, markdown: content };
   }
 
+  const cleanAnchor = decodeURIComponent(anchor).trim();
   const lines = content.split('\n');
 
-  // Case 1: Block anchor (^id)
-  if (anchor.startsWith('^')) {
-    const blockId = anchor.substring(1);
+  // Case 1: Block anchor (^id or %5Eid)
+  if (cleanAnchor.startsWith('^') || cleanAnchor.startsWith('%5E')) {
+    const blockId = cleanAnchor.startsWith('%5E') ? cleanAnchor.slice(3) : cleanAnchor.slice(1);
     const regex = new RegExp(`\\s+\\^${blockId}$`);
     for (let i = 0; i < lines.length; i++) {
       if (regex.test(lines[i])) {
         const cleanLine = lines[i].replace(regex, '');
-        return { title: `Block ^${blockId}`, markdown: cleanLine };
+        return { title: fileTitle, markdown: cleanLine };
       }
     }
-    return { title: `Block ^${blockId}`, markdown: `*(Block ^${blockId} not found)*` };
+    return { title: fileTitle, markdown: `*(Block ^${blockId} not found in ${fileTitle})*` };
   }
 
   // Case 2: Heading anchor (#slug)
-  const targetSlug = anchor.toLowerCase();
+  const targetSlug = cleanAnchor.startsWith('#') ? cleanAnchor.slice(1).toLowerCase() : cleanAnchor.toLowerCase();
   let headingLevel = 0;
   let startIndex = -1;
-  let headingTitle = anchor;
+  let headingTitle = cleanAnchor;
 
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^(#{1,6})\s+(.*)$/);
@@ -64,7 +72,7 @@ function extractEmbedContent(content: string, anchor?: string): { title: string;
   }
 
   if (startIndex === -1) {
-    return { title: `#${anchor}`, markdown: `*(Heading #${anchor} not found)*` };
+    return { title: fileTitle, markdown: `*(Heading #${cleanAnchor} not found in ${fileTitle})*` };
   }
 
   let endIndex = lines.length;
@@ -77,7 +85,7 @@ function extractEmbedContent(content: string, anchor?: string): { title: string;
   }
 
   const sectionMarkdown = lines.slice(startIndex, endIndex).join('\n');
-  return { title: headingTitle, markdown: sectionMarkdown };
+  return { title: `${fileTitle} > ${headingTitle}`, markdown: sectionMarkdown };
 }
 
 export default function NoteEmbed({
@@ -85,7 +93,7 @@ export default function NoteEmbed({
   currentNotePath,
   onNavigate,
   depth = 1,
-  seenChain = [],
+  seenChain = EMPTY_CHAIN,
 }: NoteEmbedProps) {
   const [content, setContent] = useState<string | null>(null);
   const [title, setTitle] = useState<string>('Embedded Note');
@@ -93,6 +101,7 @@ export default function NoteEmbed({
   const [error, setError] = useState<string | null>(null);
 
   const resolved = resolveLink(currentNotePath, src);
+  const seenChainKey = seenChain.join('|');
 
   useEffect(() => {
     if (!resolved.isValid || resolved.isExternal) {
@@ -129,7 +138,11 @@ export default function NoteEmbed({
         }
         const data = await res.json();
         if (isMounted) {
-          const { title: sectionTitle, markdown } = extractEmbedContent(data.content || '', resolved.anchor);
+          const { title: sectionTitle, markdown } = extractEmbedContent(
+            data.content || '',
+            resolved.anchor,
+            resolved.targetFullPath
+          );
           setTitle(sectionTitle);
           setContent(markdown);
         }
@@ -145,7 +158,8 @@ export default function NoteEmbed({
     return () => {
       isMounted = false;
     };
-  }, [resolved.targetFullPath, resolved.anchor, resolved.isExternal, resolved.isValid, depth, currentNotePath, seenChain]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolved.targetFullPath, resolved.anchor, resolved.isExternal, resolved.isValid, depth, currentNotePath, seenChainKey]);
 
   const targetKey = `${resolved.targetFullPath}#${resolved.anchor || ''}`;
   const nextChain = [...seenChain, targetKey];
@@ -194,10 +208,25 @@ export default function NoteEmbed({
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
+              // Strip any lingering trailing block ID from paragraph/list display
+              p: ({ children, ...props }: any) => {
+                if (typeof children === 'string') {
+                  const cleaned = children.replace(/\s+\^[a-zA-Z0-9_-]+$/, '');
+                  return <p {...props}>{cleaned}</p>;
+                }
+                return <p {...props}>{children}</p>;
+              },
+              li: ({ children, ...props }: any) => {
+                if (typeof children === 'string') {
+                  const cleaned = children.replace(/\s+\^[a-zA-Z0-9_-]+$/, '');
+                  return <li {...props}>{cleaned}</li>;
+                }
+                return <li {...props}>{children}</li>;
+              },
               // Nested embed support with depth increment
               img: (props: any) => {
                 const { src, alt } = props;
-                if (src && (src.endsWith('.md') || src.includes('.md#') || src.includes('.md?'))) {
+                if (src && (src.endsWith('.md') || src.includes('.md#') || src.includes('.md?') || src.startsWith('#'))) {
                   return (
                     <NoteEmbed
                       src={src}

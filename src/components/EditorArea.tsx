@@ -66,6 +66,47 @@ function getNodeText(node: React.ReactNode): string {
   return '';
 }
 
+// Strips Obsidian/mcnotes-style block IDs (^blockid) from rendered preview text while preserving the ID for anchor targeting
+function stripBlockIdFromChildren(children: React.ReactNode): { cleanedChildren: React.ReactNode; blockId: string | null } {
+  let foundId: string | null = null;
+
+  function walk(node: React.ReactNode): React.ReactNode {
+    if (typeof node === 'string') {
+      const match = node.match(/\s+\^([a-zA-Z0-9_-]+)$/);
+      if (match) {
+        foundId = match[1];
+        return node.slice(0, match.index);
+      }
+      return node;
+    }
+    if (Array.isArray(node)) {
+      let alreadyStripped = false;
+      const reversed = [...node].reverse().map((child) => {
+        if (!alreadyStripped) {
+          const res = walk(child);
+          if (foundId) {
+            alreadyStripped = true;
+            return res;
+          }
+        }
+        return child;
+      });
+      return reversed.reverse();
+    }
+    if (React.isValidElement(node) && (node.props as any)?.children) {
+      const childProps = node.props as any;
+      const res = walk(childProps.children);
+      if (foundId) {
+        return React.cloneElement(node, { ...childProps, children: res });
+      }
+    }
+    return node;
+  }
+
+  const cleanedChildren = walk(children);
+  return { cleanedChildren, blockId: foundId };
+}
+
 // Stable remark plugins list
 const REMARK_PLUGINS = [remarkGfm];
 
@@ -265,6 +306,8 @@ export default function EditorArea({
       setCanUndo(true);
       setCanRedo(false);
 
+      const savedScrollTop = textareaRef.current?.scrollTop;
+
       setContent(newContent);
       contentRef.current = newContent;
       onSave(newContent);
@@ -273,8 +316,11 @@ export default function EditorArea({
         savedSelectionRangeRef.current = { start: selStart, end: selEnd };
         requestAnimationFrame(() => {
           if (textareaRef.current) {
-            textareaRef.current.focus();
+            textareaRef.current.focus({ preventScroll: true });
             textareaRef.current.setSelectionRange(selStart, selEnd);
+            if (savedScrollTop !== undefined) {
+              textareaRef.current.scrollTop = savedScrollTop;
+            }
           }
         });
       }
@@ -447,6 +493,7 @@ export default function EditorArea({
 
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
+    savedSelectionRangeRef.current = { start, end };
     const current = contentRef.current;
 
     // Check line-level formats
@@ -744,7 +791,7 @@ export default function EditorArea({
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const start = textarea.selectionStart;
+    const start = textarea.selectionStart ?? savedSelectionRangeRef.current.start;
     const current = contentRef.current;
 
     const header = '| ' + Array.from({ length: cols }, (_, i) => `Column ${i + 1}`).join(' | ') + ' |';
@@ -860,11 +907,14 @@ export default function EditorArea({
       }
 
       if (resolved.isAnchorOnly) {
-        const el = document.getElementById(resolved.anchor || '');
+        const decodedAnchor = decodeURIComponent(resolved.anchor || '');
+        const el = document.getElementById(decodedAnchor) ||
+                   document.getElementById(decodedAnchor.replace(/^\^/, '')) ||
+                   document.getElementById(`^${decodedAnchor}`);
         if (el) {
           el.scrollIntoView({ behavior: 'smooth' });
         } else {
-          setToastMessage(`Section #${resolved.anchor} not found`);
+          setToastMessage(`Section #${decodedAnchor} not found`);
           setTimeout(() => setToastMessage(null), 3000);
         }
         return;
@@ -981,7 +1031,7 @@ export default function EditorArea({
       },
       img: (props: any) => {
         const { src, alt } = props;
-        if (src && (src.endsWith('.md') || src.includes('.md#') || src.includes('.md?'))) {
+        if (src && (src.endsWith('.md') || src.includes('.md#') || src.includes('.md?') || src.startsWith('#'))) {
           return (
             <NoteEmbed
               src={src}
@@ -995,54 +1045,57 @@ export default function EditorArea({
         return <img {...props} alt={alt || ''} />;
       },
       h1: ({ children, node, ...props }: any) => {
-        const text = getNodeText(children);
+        const { cleanedChildren, blockId } = stripBlockIdFromChildren(children);
+        const text = getNodeText(cleanedChildren);
         const slug = sluggerRef.current(text);
-        return <h1 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h1>;
+        return <h1 id={blockId ? `^${blockId}` : slug} data-source-line={node?.position?.start?.line} {...props}>{cleanedChildren}</h1>;
       },
       h2: ({ children, node, ...props }: any) => {
-        const text = getNodeText(children);
+        const { cleanedChildren, blockId } = stripBlockIdFromChildren(children);
+        const text = getNodeText(cleanedChildren);
         const slug = sluggerRef.current(text);
-        return <h2 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h2>;
+        return <h2 id={blockId ? `^${blockId}` : slug} data-source-line={node?.position?.start?.line} {...props}>{cleanedChildren}</h2>;
       },
       h3: ({ children, node, ...props }: any) => {
-        const text = getNodeText(children);
+        const { cleanedChildren, blockId } = stripBlockIdFromChildren(children);
+        const text = getNodeText(cleanedChildren);
         const slug = sluggerRef.current(text);
-        return <h3 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h3>;
+        return <h3 id={blockId ? `^${blockId}` : slug} data-source-line={node?.position?.start?.line} {...props}>{cleanedChildren}</h3>;
       },
       h4: ({ children, node, ...props }: any) => {
-        const text = getNodeText(children);
+        const { cleanedChildren, blockId } = stripBlockIdFromChildren(children);
+        const text = getNodeText(cleanedChildren);
         const slug = sluggerRef.current(text);
-        return <h4 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h4>;
+        return <h4 id={blockId ? `^${blockId}` : slug} data-source-line={node?.position?.start?.line} {...props}>{cleanedChildren}</h4>;
       },
       h5: ({ children, node, ...props }: any) => {
-        const text = getNodeText(children);
+        const { cleanedChildren, blockId } = stripBlockIdFromChildren(children);
+        const text = getNodeText(cleanedChildren);
         const slug = sluggerRef.current(text);
-        return <h5 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h5>;
+        return <h5 id={blockId ? `^${blockId}` : slug} data-source-line={node?.position?.start?.line} {...props}>{cleanedChildren}</h5>;
       },
       h6: ({ children, node, ...props }: any) => {
-        const text = getNodeText(children);
+        const { cleanedChildren, blockId } = stripBlockIdFromChildren(children);
+        const text = getNodeText(cleanedChildren);
         const slug = sluggerRef.current(text);
-        return <h6 id={slug} data-source-line={node?.position?.start?.line} {...props}>{children}</h6>;
+        return <h6 id={blockId ? `^${blockId}` : slug} data-source-line={node?.position?.start?.line} {...props}>{cleanedChildren}</h6>;
       },
       p: ({ children, node, ...props }: any) => {
-        // Obsidian-style block ID support: strip ^id and set id="^id"
-        const text = getNodeText(children);
-        const blockMatch = text.match(/\s+\^([a-zA-Z0-9_-]+)$/);
-        let blockId: string | undefined;
-
-        if (blockMatch) {
-          blockId = `^${blockMatch[1]}`;
-        }
-
+        const { cleanedChildren, blockId } = stripBlockIdFromChildren(children);
         return (
-          <p id={blockId} data-source-line={node?.position?.start?.line} {...props}>
-            {children}
+          <p id={blockId ? `^${blockId}` : undefined} data-source-line={node?.position?.start?.line} {...props}>
+            {cleanedChildren}
           </p>
         );
       },
-      blockquote: ({ children, node, ...props }: any) => (
-        <blockquote data-source-line={node?.position?.start?.line} {...props}>{children}</blockquote>
-      ),
+      blockquote: ({ children, node, ...props }: any) => {
+        const { cleanedChildren, blockId } = stripBlockIdFromChildren(children);
+        return (
+          <blockquote id={blockId ? `^${blockId}` : undefined} data-source-line={node?.position?.start?.line} {...props}>
+            {cleanedChildren}
+          </blockquote>
+        );
+      },
       pre: ({ children, node, ...props }: any) => (
         <pre data-source-line={node?.position?.start?.line} {...props}>{children}</pre>
       ),
@@ -1052,9 +1105,14 @@ export default function EditorArea({
       ol: ({ children, node, ...props }: any) => (
         <ol data-source-line={node?.position?.start?.line} {...props}>{children}</ol>
       ),
-      li: ({ children, node, ...props }: any) => (
-        <li data-source-line={node?.position?.start?.line} {...props}>{children}</li>
-      ),
+      li: ({ children, node, ...props }: any) => {
+        const { cleanedChildren, blockId } = stripBlockIdFromChildren(children);
+        return (
+          <li id={blockId ? `^${blockId}` : undefined} data-source-line={node?.position?.start?.line} {...props}>
+            {cleanedChildren}
+          </li>
+        );
+      },
       table: ({ children, node, ...props }: any) => (
         <table data-source-line={node?.position?.start?.line} {...props}>{children}</table>
       ),
@@ -1219,7 +1277,7 @@ export default function EditorArea({
       textarea.scrollTop = 0;
       return;
     }
-    if (previewScroll >= maxPreview - 1) {
+    if (maxPreview > 50 && previewScroll >= maxPreview - 1) {
       textarea.scrollTop = maxSource;
       return;
     }
@@ -1589,8 +1647,10 @@ export default function EditorArea({
           onSubmit={(markdown, replaceStart, replaceEnd) => {
             const textarea = textareaRef.current;
             const current = contentRef.current;
-            const sStart = replaceStart !== undefined ? replaceStart : textarea?.selectionStart || 0;
-            const sEnd = replaceEnd !== undefined ? replaceEnd : textarea?.selectionEnd || 0;
+            const fallbackStart = savedSelectionRangeRef.current.start ?? 0;
+            const fallbackEnd = savedSelectionRangeRef.current.end ?? 0;
+            const sStart = replaceStart !== undefined ? replaceStart : (textarea?.selectionStart ?? fallbackStart);
+            const sEnd = replaceEnd !== undefined ? replaceEnd : (textarea?.selectionEnd ?? fallbackEnd);
 
             const newContent = current.substring(0, sStart) + markdown + current.substring(sEnd);
             const newCursor = sStart + markdown.length;
