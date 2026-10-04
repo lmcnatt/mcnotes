@@ -105,6 +105,7 @@ export default function FilePickerModal({
       fullPath: string;
       isDirectory: boolean;
       isThisNote: boolean;
+      depth: number;
       emoji?: string;
     }> = [];
 
@@ -116,6 +117,7 @@ export default function FilePickerModal({
       fullPath: currentNotePath,
       isDirectory: false,
       isThisNote: true,
+      depth: 0,
       emoji: '📄',
     });
 
@@ -136,65 +138,129 @@ export default function FilePickerModal({
             fullPath: item.path,
             isDirectory: item.isDirectory,
             isThisNote: item.path === currentNotePath,
+            depth: 0,
           });
         }
       }
     } else {
-      // Tree view: flatten visible items based on expandedFolders
-      Array.from(projectMap.entries()).forEach(([projName, projData]) => {
-        // Project root
-        const projKey = `${projName}/`;
-        const isProjExpanded = expandedFolders[projKey] ?? false;
+      // Tree view: proper hierarchical tree per project
+      interface TreeNode {
+        key: string;
+        name: string;
+        title: string;
+        fullPath: string;
+        isDirectory: boolean;
+        depth: number;
+        emoji?: string;
+        children: TreeNode[];
+      }
 
-        result.push({
-          key: projKey,
-          title: projName,
-          subtitle: 'Project',
-          fullPath: projKey,
+      function buildProjectTree(projectName: string, projectEmoji: string, projItems: FilePickerItem[]): TreeNode {
+        const root: TreeNode = {
+          key: `${projectName}/`,
+          name: projectName,
+          title: projectName,
+          fullPath: `${projectName}/`,
           isDirectory: true,
-          isThisNote: false,
-          emoji: projData.emoji,
-        });
+          depth: 0,
+          emoji: projectEmoji,
+          children: [],
+        };
 
-        if (isProjExpanded) {
-          // Sort items in this project: folders first, then alphabetical
-          const sorted = [...projData.items].sort((a, b) => {
+        const folderMap = new Map<string, TreeNode>();
+        folderMap.set(projectName, root);
+
+        // 1. Process directories sorted by path length so parents exist before children
+        const dirs = projItems
+          .filter((it) => it.isDirectory)
+          .sort((a, b) => a.path.length - b.path.length);
+
+        for (const dir of dirs) {
+          const cleanPath = dir.path.replace(/\/+$/, '');
+          if (cleanPath === projectName) continue;
+          const lastSlash = cleanPath.lastIndexOf('/');
+          const parentPath = lastSlash !== -1 ? cleanPath.substring(0, lastSlash) : projectName;
+          const depth = cleanPath.split('/').length - 1;
+
+          const node: TreeNode = {
+            key: `${cleanPath}/`,
+            name: dir.name,
+            title: dir.title || dir.name,
+            fullPath: `${cleanPath}/`,
+            isDirectory: true,
+            depth,
+            children: [],
+          };
+          folderMap.set(cleanPath, node);
+
+          const parent = folderMap.get(parentPath) || root;
+          parent.children.push(node);
+        }
+
+        // 2. Process notes / files
+        const files = projItems.filter((it) => !it.isDirectory);
+        for (const file of files) {
+          const lastSlash = file.path.lastIndexOf('/');
+          const parentPath = lastSlash !== -1 ? file.path.substring(0, lastSlash) : projectName;
+          const depth = file.path.split('/').length - 1;
+
+          const node: TreeNode = {
+            key: file.path,
+            name: file.name,
+            title: file.title || file.name.replace('.md', ''),
+            fullPath: file.path,
+            isDirectory: false,
+            depth,
+            children: [],
+          };
+
+          const parent = folderMap.get(parentPath) || root;
+          parent.children.push(node);
+        }
+
+        // 3. Sort children inside each folder: folders first, then files alphabetically
+        function sortNode(n: TreeNode) {
+          n.children.sort((a, b) => {
             if (a.isDirectory && !b.isDirectory) return -1;
             if (!a.isDirectory && b.isDirectory) return 1;
             return a.title.localeCompare(b.title);
           });
-
-          for (const item of sorted) {
-            // Check if parent folders are expanded
-            const relWithinProject = item.path.startsWith(`${projName}/`)
-              ? item.path.slice(projName.length + 1)
-              : item.path;
-            const segments = relWithinProject.split('/').filter(Boolean);
-
-            let visible = true;
-            let checkPath = projName;
-            for (let i = 0; i < segments.length - 1; i++) {
-              checkPath = `${checkPath}/${segments[i]}`;
-              if (!expandedFolders[`${checkPath}/`] && !expandedFolders[checkPath]) {
-                visible = false;
-                break;
-              }
-            }
-
-            if (visible) {
-              const depth = segments.length;
-              const indent = '  '.repeat(depth);
-              result.push({
-                key: item.path,
-                title: `${indent}${item.isDirectory ? item.name : item.title}`,
-                subtitle: item.path,
-                fullPath: item.path,
-                isDirectory: item.isDirectory,
-                isThisNote: item.path === currentNotePath,
-              });
+          for (const child of n.children) {
+            if (child.isDirectory) {
+              sortNode(child);
             }
           }
         }
+
+        sortNode(root);
+        return root;
+      }
+
+      Array.from(projectMap.entries()).forEach(([projName, projData]) => {
+        const treeRoot = buildProjectTree(projName, projData.emoji, projData.items);
+
+        function traverse(node: TreeNode) {
+          result.push({
+            key: node.key,
+            title: node.title,
+            subtitle: node.depth === 0 ? 'Project' : node.fullPath,
+            fullPath: node.fullPath,
+            isDirectory: node.isDirectory,
+            isThisNote: node.fullPath === currentNotePath,
+            depth: node.depth,
+            emoji: node.emoji,
+          });
+
+          // If folder is expanded, output its children directly underneath it
+          const isExpanded = expandedFolders[node.key] || false;
+          if (node.isDirectory && isExpanded) {
+            for (const child of node.children) {
+              traverse(child);
+            }
+          }
+        }
+
+        traverse(treeRoot);
       });
     }
 
@@ -231,7 +297,7 @@ export default function FilePickerModal({
       relativePath: rel,
       fullPath: item.fullPath,
       isThisNote: false,
-      title: item.title.trim(),
+      title: item.title,
     });
   };
 
@@ -324,6 +390,7 @@ export default function FilePickerModal({
               return (
                 <div
                   key={item.key}
+                  style={!filterQuery ? { paddingLeft: `${item.depth * 18 + 12}px` } : undefined}
                   onClick={() => {
                     setSelectedIndex(idx);
                     if (item.isDirectory && !filterQuery) {
@@ -332,7 +399,9 @@ export default function FilePickerModal({
                       handleSelectItem(item);
                     }
                   }}
-                  className={`flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer select-none text-xs transition ${
+                  className={`flex items-center justify-between pr-3 py-2 rounded-xl cursor-pointer select-none text-xs transition ${
+                    filterQuery ? 'pl-3' : ''
+                  } ${
                     isSelected
                       ? 'bg-accent/15 text-accent font-semibold border border-accent/30'
                       : 'hover:bg-card-hover text-text-main'
@@ -345,12 +414,12 @@ export default function FilePickerModal({
                           e.stopPropagation();
                           toggleFolder(item.key);
                         }}
-                        className="p-0.5 rounded hover:bg-card-bg transition"
+                        className="p-0.5 -ml-1 rounded hover:bg-card-bg transition shrink-0"
                       >
                         {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </span>
                     ) : (
-                      <span className="w-3.5" />
+                      <span className="w-3.5 shrink-0" />
                     )}
 
                     {item.emoji ? (
@@ -372,7 +441,7 @@ export default function FilePickerModal({
                           e.stopPropagation();
                           handleSelectItem(item);
                         }}
-                        className="px-2 py-0.5 rounded bg-sidebar-bg hover:bg-accent hover:text-white transition"
+                        className="px-2 py-0.5 rounded bg-sidebar-bg hover:bg-accent hover:text-white transition font-medium"
                         title="Link to this folder"
                       >
                         Select

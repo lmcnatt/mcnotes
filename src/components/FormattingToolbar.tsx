@@ -121,7 +121,7 @@ export default function FormattingToolbar({
       ref={toolbarRef}
       style={bottomOffset > 0 ? { transform: `translateY(-${bottomOffset}px)` } : undefined}
       className={`
-        flex items-center gap-0.5 px-3 py-1.5 border-b border-border-theme bg-card-bg/95 backdrop-blur-md z-20 select-none overflow-x-auto
+        relative flex items-center gap-0.5 px-3 py-1.5 border-b border-border-theme bg-card-bg/95 backdrop-blur-md z-30 select-none overflow-visible
         transition-transform duration-100 ease-out
       `}
     >
@@ -143,7 +143,7 @@ export default function FormattingToolbar({
         </button>
 
         {openDropdown === 'heading' && (
-          <div className="absolute left-0 top-full mt-1 w-28 bg-card-bg border border-border-theme rounded-xl shadow-xl p-1 z-30 space-y-0.5 animate-in fade-in duration-100">
+          <div className="absolute left-0 top-full mt-1 w-28 bg-card-bg border border-border-theme rounded-xl shadow-xl p-1 z-50 space-y-0.5 animate-in fade-in duration-100">
             {[1, 2, 3, 4, 5, 6].map((lvl) => (
               <button
                 key={lvl}
@@ -229,7 +229,7 @@ export default function FormattingToolbar({
         </button>
 
         {openDropdown === 'more_text' && (
-          <div className="absolute left-0 top-full mt-1 w-36 bg-card-bg border border-border-theme rounded-xl shadow-xl p-1 z-30 space-y-0.5 animate-in fade-in duration-100">
+          <div className="absolute left-0 top-full mt-1 w-36 bg-card-bg border border-border-theme rounded-xl shadow-xl p-1 z-50 space-y-0.5 animate-in fade-in duration-100">
             <button
               type="button"
               onPointerDown={preventBlur}
@@ -273,7 +273,7 @@ export default function FormattingToolbar({
         type="button"
         onPointerDown={preventBlur}
         onClick={() => onToggleFormat('codeBlock')}
-        className={`p-1.5 rounded-lg text-xs transition ${
+        className={`hidden sm:inline-flex p-1.5 rounded-lg text-xs transition ${
           activeFormats.codeBlock
             ? 'bg-accent/15 text-accent border border-accent/30 font-bold'
             : 'text-text-muted hover:text-text-main hover:bg-card-hover'
@@ -325,7 +325,7 @@ export default function FormattingToolbar({
         </button>
 
         {openDropdown === 'list' && (
-          <div className="absolute left-0 top-full mt-1 w-36 bg-card-bg border border-border-theme rounded-xl shadow-xl p-1 z-30 space-y-0.5 animate-in fade-in duration-100">
+          <div className="absolute left-0 top-full mt-1 w-36 bg-card-bg border border-border-theme rounded-xl shadow-xl p-1 z-50 space-y-0.5 animate-in fade-in duration-100">
             <button
               type="button"
               onPointerDown={preventBlur}
@@ -386,7 +386,7 @@ export default function FormattingToolbar({
         {openDropdown === 'table' && (
           <form
             onSubmit={handleTableSubmit}
-            className="absolute left-0 top-full mt-1 w-48 bg-card-bg border border-border-theme rounded-xl shadow-xl p-3 z-30 space-y-2.5 animate-in fade-in duration-100"
+            className="absolute left-0 top-full mt-1 w-48 bg-card-bg border border-border-theme rounded-xl shadow-xl p-3 z-50 space-y-2.5 animate-in fade-in duration-100"
           >
             <div className="text-xs font-bold text-text-main">Insert Table</div>
             <div className="grid grid-cols-2 gap-2 text-xs">
@@ -439,7 +439,7 @@ export default function FormattingToolbar({
         type="button"
         onPointerDown={preventBlur}
         onClick={onInsertHr}
-        className="p-1.5 rounded-lg text-xs text-text-muted hover:text-text-main hover:bg-card-hover transition"
+        className="hidden sm:inline-flex p-1.5 rounded-lg text-xs text-text-muted hover:text-text-main hover:bg-card-hover transition"
         title="Horizontal Rule (---)"
       >
         <Minus size={15} />

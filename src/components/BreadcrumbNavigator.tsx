@@ -31,6 +31,7 @@ export default function BreadcrumbNavigator({
 }: BreadcrumbNavigatorProps) {
   // Active open dropdown segment index: null, 'project', number (folder segment index), 'note', or 'overflow'
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [dropdownLeft, setDropdownLeft] = useState<number>(0);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [projectTrees, setProjectTrees] = useState<Record<string, FileNode[]>>({});
   const [focusedIndex, setFocusedIndex] = useState<number>(0);
@@ -45,7 +46,6 @@ export default function BreadcrumbNavigator({
   }, [notePath]);
 
   const projectName = segments[0] || '';
-  const projectEmoji = projects.find((p) => p.name === projectName)?.emoji || '📁';
   const intermediateFolders = segments.slice(1, -1);
   const noteFileName = segments[segments.length - 1] || '';
   const noteName = noteFileName.replace('.md', '');
@@ -303,6 +303,36 @@ export default function BreadcrumbNavigator({
     }
   };
 
+  const handleToggleDropdown = (key: string, e: React.MouseEvent<HTMLElement>) => {
+    if (activeDropdown === key) {
+      setActiveDropdown(null);
+      return;
+    }
+    const buttonEl = e.currentTarget;
+    if (containerRef.current) {
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const buttonRect = buttonEl.getBoundingClientRect();
+      const leftOffset = buttonRect.left - containerRect.left;
+      setDropdownLeft(Math.max(0, leftOffset));
+    }
+    setActiveDropdown(key);
+  };
+
+  const getDropdownLeft = () => {
+    if (typeof window === 'undefined' || !containerRef.current) {
+      return dropdownLeft;
+    }
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const dropdownWidth = 320; // 20rem (sm:w-80)
+    const maxViewportLeft = window.innerWidth - dropdownWidth - 12;
+    const currentAbsoluteLeft = containerRect.left + dropdownLeft;
+
+    if (currentAbsoluteLeft > maxViewportLeft) {
+      return Math.max(0, maxViewportLeft - containerRect.left);
+    }
+    return dropdownLeft;
+  };
+
   // Determine whether to collapse middle segments
   const shouldCollapseMiddle = intermediateFolders.length > 2;
   const visibleIntermediate = shouldCollapseMiddle ? [] : intermediateFolders;
@@ -316,17 +346,13 @@ export default function BreadcrumbNavigator({
     >
       {/* 1. Project Segment */}
       <button
-        onClick={() => {
-          setActiveDropdown((cur) => (cur === 'project' ? null : 'project'));
-        }}
-        className={`flex items-center gap-1.5 px-2 py-1 min-h-[36px] sm:min-h-0 rounded-lg hover:bg-card-hover hover:text-text-main transition font-medium ${
-          activeDropdown === 'project' ? 'bg-card-hover text-text-main font-semibold' : ''
+        onClick={(e) => handleToggleDropdown('project', e)}
+        className={`px-1.5 py-1 min-h-[36px] sm:min-h-0 rounded-lg hover:bg-card-hover hover:text-text-main transition font-normal truncate max-w-[100px] sm:max-w-[150px] ${
+          activeDropdown === 'project' ? 'bg-card-hover text-text-main' : ''
         }`}
         title={`Project: ${projectName}`}
       >
-        <span className="text-sm shrink-0">{projectEmoji}</span>
-        <span className="truncate max-w-[100px] sm:max-w-[140px]">{projectName}</span>
-        <ChevronDown size={11} className="opacity-60 shrink-0" />
+        <span className="truncate">{projectName}</span>
       </button>
 
       <ChevronRight size={13} className="opacity-40 shrink-0" />
@@ -335,10 +361,8 @@ export default function BreadcrumbNavigator({
       {shouldCollapseMiddle ? (
         <>
           <button
-            onClick={() => {
-              setActiveDropdown((cur) => (cur === 'overflow' ? null : 'overflow'));
-            }}
-            className={`flex items-center gap-1 px-1.5 py-1 min-h-[36px] sm:min-h-0 rounded-lg hover:bg-card-hover hover:text-text-main transition ${
+            onClick={(e) => handleToggleDropdown('overflow', e)}
+            className={`px-1.5 py-1 min-h-[36px] sm:min-h-0 rounded-lg hover:bg-card-hover hover:text-text-main transition ${
               activeDropdown === 'overflow' ? 'bg-card-hover text-text-main' : ''
             }`}
             title="Show intermediate folders"
@@ -351,17 +375,13 @@ export default function BreadcrumbNavigator({
         visibleIntermediate.map((folder, i) => (
           <React.Fragment key={`folder-${i}`}>
             <button
-              onClick={() => {
-                setActiveDropdown((cur) => (cur === `folder_${i}` ? null : `folder_${i}`));
-              }}
-              className={`flex items-center gap-1 px-2 py-1 min-h-[36px] sm:min-h-0 rounded-lg hover:bg-card-hover hover:text-text-main transition truncate max-w-[90px] sm:max-w-[120px] ${
-                activeDropdown === `folder_${i}` ? 'bg-card-hover text-text-main font-semibold' : ''
+              onClick={(e) => handleToggleDropdown(`folder_${i}`, e)}
+              className={`px-1.5 py-1 min-h-[36px] sm:min-h-0 rounded-lg hover:bg-card-hover hover:text-text-main transition truncate max-w-[90px] sm:max-w-[130px] font-normal ${
+                activeDropdown === `folder_${i}` ? 'bg-card-hover text-text-main' : ''
               }`}
               title={`Folder: ${folder}`}
             >
-              <Folder size={12} className="opacity-70 text-accent shrink-0" />
               <span className="truncate">{folder}</span>
-              <ChevronDown size={11} className="opacity-60 shrink-0" />
             </button>
             <ChevronRight size={13} className="opacity-40 shrink-0" />
           </React.Fragment>
@@ -370,23 +390,21 @@ export default function BreadcrumbNavigator({
 
       {/* 2. Note Segment */}
       <button
-        onClick={() => {
-          setActiveDropdown((cur) => (cur === 'note' ? null : 'note'));
-        }}
-        className={`flex items-center gap-1.5 px-2 py-1 min-h-[36px] sm:min-h-0 rounded-lg hover:bg-card-hover text-text-main transition font-bold text-sm truncate max-w-[130px] sm:max-w-[200px] ${
+        onClick={(e) => handleToggleDropdown('note', e)}
+        className={`px-1.5 py-1 min-h-[36px] sm:min-h-0 rounded-lg hover:bg-card-hover text-text-main transition truncate max-w-[130px] sm:max-w-[200px] ${
           activeDropdown === 'note' ? 'bg-card-hover ring-1 ring-border-theme' : ''
         }`}
         title={`Note: ${noteName}`}
       >
         <span className="truncate">{noteName}</span>
-        <ChevronDown size={11} className="opacity-60 shrink-0" />
       </button>
 
       {/* Dropdown Menu Anchored Below Active Segment */}
       {activeDropdown !== null && (
         <div
           ref={dropdownRef}
-          className="fixed sm:absolute left-2 sm:left-0 right-2 sm:right-auto top-[calc(3.5rem+env(safe-area-inset-top))] sm:top-full mt-1.5 sm:w-80 max-h-[70vh] z-50 bg-card-bg border border-border-theme rounded-xl shadow-2xl overflow-y-auto p-1.5 animate-in fade-in zoom-in-95 duration-100"
+          style={{ left: `${getDropdownLeft()}px` }}
+          className="absolute top-full mt-1.5 w-72 sm:w-80 max-w-[calc(100vw-24px)] max-h-[70vh] z-50 bg-card-bg border border-border-theme rounded-xl shadow-2xl overflow-y-auto p-1.5 animate-in fade-in zoom-in-95 duration-100"
         >
           {visibleFlatItems.length === 0 ? (
             <div className="py-6 text-center text-xs text-text-muted">No items found.</div>

@@ -3,11 +3,14 @@
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useMemo,
   useDeferredValue,
   useCallback,
 } from 'react';
+
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -133,7 +136,7 @@ export default function EditorArea({
 
   // View mode persisted in localStorage (survives reloads and note switches)
   const [mode, setMode] = useState<EditMode>('source');
-  const [isSwitchingMode, setIsSwitchingMode] = useState(false);
+  const pendingScrollAnchorRef = useRef<{ topSourceLine: number; savedScrollTop: number } | null>(null);
 
   const [isMobile, setIsMobile] = useState(false);
   const [wordGoal, setWordGoal] = useState<number>(0);
@@ -322,85 +325,106 @@ export default function EditorArea({
     setCanRedo(redoStackRef.current.length > 0);
   };
 
-  // Section 5: Smooth content-anchored view-mode switching
+  // Section 5: Smooth content-anchored view-mode switching without visual glitches
   const handleModeSwitch = (targetMode: EditMode) => {
     if (targetMode === mode) return;
 
     // 1. Determine top-visible source line before switching
     let topSourceLine = 1;
+    let savedScrollTop = 0;
     const textarea = textareaRef.current;
     const liveContainer = liveContainerRef.current;
+    const previewContainer = previewContainerRef.current;
 
     if ((mode === 'source' || mode === 'split') && textarea) {
       savedSelectionRangeRef.current = {
         start: textarea.selectionStart,
         end: textarea.selectionEnd,
       };
-      const scroll = textarea.scrollTop;
+      savedScrollTop = textarea.scrollTop;
       const offsets = sourceLineOffsetsRef.current;
       for (let i = 0; i < offsets.length; i++) {
-        if (offsets[i] <= scroll) {
+        if (offsets[i] <= savedScrollTop) {
           topSourceLine = i + 1;
         } else {
           break;
         }
       }
-    } else if (mode === 'live' && liveContainer) {
-      const elements = Array.from(liveContainer.querySelectorAll('[data-source-line]'));
-      const rect = liveContainer.getBoundingClientRect();
-      for (const el of elements) {
-        const elRect = el.getBoundingClientRect();
-        if (elRect.top - rect.top >= -20) {
-          const l = parseInt(el.getAttribute('data-source-line') || '1', 10);
-          if (l > 0) {
-            topSourceLine = l;
-            break;
+    } else {
+      const activeContainer = mode === 'live' ? liveContainer : previewContainer;
+      if (activeContainer) {
+        const elements = Array.from(activeContainer.querySelectorAll<HTMLElement>('[data-source-line]'));
+        const rect = activeContainer.getBoundingClientRect();
+        for (const el of elements) {
+          const elRect = el.getBoundingClientRect();
+          if (elRect.top - rect.top >= -20) {
+            const l = parseInt(el.getAttribute('data-source-line') || '1', 10);
+            if (l > 0) {
+              topSourceLine = l;
+              break;
+            }
           }
         }
       }
     }
 
-    // 2. Hide view momentarily (opacity 0) to avoid jump
-    setIsSwitchingMode(true);
+    pendingScrollAnchorRef.current = { topSourceLine, savedScrollTop };
     setMode(targetMode);
     localStorage.setItem('notes-view-mode', targetMode);
+  };
 
-    // 3. Restore scroll position anchored to topSourceLine before revealing
-    requestAnimationFrame(() => {
-      measureSourceLineOffsets();
+  // Synchronously restore scroll position before the browser paints the new view
+  useIsomorphicLayoutEffect(() => {
+    if (!pendingScrollAnchorRef.current) return;
+    const { topSourceLine, savedScrollTop } = pendingScrollAnchorRef.current;
+    pendingScrollAnchorRef.current = null;
 
-      if (targetMode === 'source' || targetMode === 'split') {
-        const newTextarea = textareaRef.current;
-        if (newTextarea) {
-          const offsets = sourceLineOffsetsRef.current;
-          const targetTop = offsets[topSourceLine - 1] || 0;
-          newTextarea.scrollTop = targetTop;
+    measureSourceLineOffsets();
 
-          // Restore cursor/selection without scrolling away
-          const { start, end } = savedSelectionRangeRef.current;
+    if (mode === 'source' || mode === 'split') {
+      const newTextarea = textareaRef.current;
+      if (newTextarea) {
+        const offsets = sourceLineOffsetsRef.current;
+        const targetTop = offsets[topSourceLine - 1] ?? savedScrollTop;
+        newTextarea.scrollTop = targetTop;
+
+        const { start, end } = savedSelectionRangeRef.current;
+        try {
           newTextarea.setSelectionRange(start, end);
-          newTextarea.scrollTop = targetTop;
+        } catch {
+          // ignore
         }
+        newTextarea.scrollTop = targetTop;
       }
+    }
 
-      if (targetMode === 'live' || targetMode === 'split') {
-        const targetContainer = targetMode === 'live' ? liveContainerRef.current : previewContainerRef.current;
-        if (targetContainer) {
-          const el = targetContainer.querySelector(`[data-source-line="${topSourceLine}"]`);
-          if (el) {
-            const containerRect = targetContainer.getBoundingClientRect();
-            const elRect = el.getBoundingClientRect();
-            targetContainer.scrollTop = elRect.top - containerRect.top + targetContainer.scrollTop;
+    if (mode === 'live' || mode === 'split') {
+      const targetContainer = mode === 'live' ? liveContainerRef.current : previewContainerRef.current;
+      if (targetContainer) {
+        const elements = Array.from(targetContainer.querySelectorAll<HTMLElement>('[data-source-line]'));
+        let targetEl: HTMLElement | null = null;
+        let bestLine = -1;
+
+        for (const el of elements) {
+          const l = parseInt(el.getAttribute('data-source-line') || '0', 10);
+          if (l <= topSourceLine && l > bestLine) {
+            bestLine = l;
+            targetEl = el;
           }
         }
-      }
 
-      // Smooth fade-in
-      setTimeout(() => {
-        setIsSwitchingMode(false);
-      }, 50);
-    });
-  };
+        if (!targetEl && elements.length > 0) {
+          targetEl = elements[0];
+        }
+
+        if (targetEl) {
+          const containerRect = targetContainer.getBoundingClientRect();
+          const elRect = targetEl.getBoundingClientRect();
+          targetContainer.scrollTop = elRect.top - containerRect.top + targetContainer.scrollTop;
+        }
+      }
+    }
+  }, [mode]);
 
   // Section 3: Tab / Shift+Tab indent behavior
   const handleEditorTabKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1180,6 +1204,68 @@ export default function EditorArea({
     }
   };
 
+  // Scroll synchronization from preview to source in Split mode
+  const syncPreviewToSource = () => {
+    const textarea = textareaRef.current;
+    const preview = previewContainerRef.current;
+    if (!textarea || !preview) return;
+
+    const maxSource = textarea.scrollHeight - textarea.clientHeight;
+    const maxPreview = preview.scrollHeight - preview.clientHeight;
+    if (maxSource <= 0 || maxPreview <= 0) return;
+
+    const previewScroll = preview.scrollTop;
+    if (previewScroll <= 0) {
+      textarea.scrollTop = 0;
+      return;
+    }
+    if (previewScroll >= maxPreview - 1) {
+      textarea.scrollTop = maxSource;
+      return;
+    }
+
+    const elements = Array.from(preview.querySelectorAll<HTMLElement>('[data-source-line]'));
+    const pRect = preview.getBoundingClientRect();
+    let bestLine = -1;
+    let minPositiveDist = Infinity;
+
+    for (const el of elements) {
+      const elRect = el.getBoundingClientRect();
+      const dist = elRect.top - pRect.top;
+      if (dist >= -20 && dist < minPositiveDist) {
+        minPositiveDist = dist;
+        const l = parseInt(el.getAttribute('data-source-line') || '1', 10);
+        if (l > 0) {
+          bestLine = l;
+          break;
+        }
+      }
+    }
+
+    const offsets = sourceLineOffsetsRef.current;
+    if (bestLine > 0 && offsets && offsets.length >= bestLine) {
+      const targetTop = offsets[bestLine - 1] || 0;
+      textarea.scrollTop = Math.min(maxSource, Math.max(0, targetTop));
+    } else {
+      textarea.scrollTop = (previewScroll / maxPreview) * maxSource;
+    }
+  };
+
+  const handlePreviewScroll = () => {
+    if (mode === 'split') {
+      if (activeScrollOrigin.current === 'source') return;
+      activeScrollOrigin.current = 'preview';
+
+      if (rafId.current) cancelAnimationFrame(rafId.current);
+      rafId.current = requestAnimationFrame(() => {
+        syncPreviewToSource();
+        rafId.current = requestAnimationFrame(() => {
+          activeScrollOrigin.current = null;
+        });
+      });
+    }
+  };
+
   const handleSourceScroll = () => {
     if (mode === 'split') {
       if (activeScrollOrigin.current === 'preview') return;
@@ -1243,7 +1329,7 @@ export default function EditorArea({
       )}
 
       {/* Workspace Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 p-3 sm:p-4 border-b border-border-theme bg-card-bg z-10 shrink-0">
+      <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 p-3 sm:p-4 border-b border-border-theme bg-card-bg z-40 shrink-0">
         {/* Interactive Breadcrumb Navigator (§1) */}
         <BreadcrumbNavigator
           notePath={notePath}
@@ -1342,11 +1428,7 @@ export default function EditorArea({
       )}
 
       {/* Editor Body */}
-      <div
-        className={`flex-1 w-full h-full overflow-hidden flex relative transition-opacity duration-150 ${
-          isSwitchingMode ? 'opacity-0' : 'opacity-100'
-        }`}
-      >
+      <div className="flex-1 w-full h-full overflow-hidden flex relative z-10">
         {/* Floating "Open link" button in Source mode (§6.5) */}
         {floatingLink && (mode === 'source' || mode === 'split') && (
           <div
@@ -1409,6 +1491,7 @@ export default function EditorArea({
             <MarkdownPreview
               content={deferredContent}
               components={markdownComponents}
+              onScroll={handlePreviewScroll}
               containerRef={previewContainerRef}
               bottomPadding={bottomPadding}
               disableHeavyPreview={disableHeavyPreview}
