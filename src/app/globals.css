@@ -216,16 +216,55 @@ body {
   list-style-type: disc !important;
 }
 
+.markdown-body ul ul,
+.markdown-body ol ul,
+.markdown-body li > ul {
+  list-style-type: circle !important;
+}
+
+.markdown-body ul ul ul,
+.markdown-body ol ul ul,
+.markdown-body ol ol ul,
+.markdown-body ul ol ul,
+.markdown-body li > ul > li > ul,
+.markdown-body li > ol > li > ul {
+  list-style-type: square !important;
+}
+
+/* Numbered list hierarchy: 1, 2, 3 -> a, b, c -> i, ii, iii */
 .markdown-body ol {
   list-style-type: decimal !important;
 }
 
-.markdown-body ul ul {
-  list-style-type: circle !important;
+.markdown-body ol ol,
+.markdown-body ol > li > ol {
+  list-style-type: lower-alpha !important;
 }
 
-.markdown-body ul ul ul {
-  list-style-type: square !important;
+.markdown-body ol ol ol,
+.markdown-body ol > li > ol > li > ol {
+  list-style-type: lower-roman !important;
+}
+
+.markdown-body ol ol ol ol,
+.markdown-body ol > li > ol > li > ol > li > ol {
+  list-style-type: decimal !important;
+}
+
+/* Ordered lists inside unordered lists restart hierarchy from decimal */
+.markdown-body ul ol,
+.markdown-body ul > li > ol {
+  list-style-type: decimal !important;
+}
+
+.markdown-body ul ol ol,
+.markdown-body ul > li > ol > li > ol {
+  list-style-type: lower-alpha !important;
+}
+
+.markdown-body ul ol ol ol,
+.markdown-body ul > li > ol > li > ol > li > ol {
+  list-style-type: lower-roman !important;
 }
 
 /* Nested lists: remove bottom margin gap before next sibling list item */

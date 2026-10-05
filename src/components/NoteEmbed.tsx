@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ExternalLink, AlertCircle, Loader } from 'lucide-react';
 import { resolveLink, githubSlug } from '@/lib/linkUtils';
+import { preprocessMarkdown } from '@/lib/markdownUtils';
 
 interface NoteEmbedProps {
   src: string;
@@ -242,7 +243,7 @@ export default function NoteEmbed({
               },
             }}
           >
-            {content}
+            {preprocessMarkdown(content)}
           </ReactMarkdown>
         ) : null}
       </div>

@@ -29,6 +29,7 @@ import {
   createSlugger,
   findLinksInMarkdown,
 } from '@/lib/linkUtils';
+import { preprocessMarkdown } from '@/lib/markdownUtils';
 import BreadcrumbNavigator from './BreadcrumbNavigator';
 import FormattingToolbar, { ActiveFormats } from './FormattingToolbar';
 import LinkMakerModal, { ExistingLinkData } from './LinkMakerModal';
@@ -47,14 +48,6 @@ interface EditorAreaProps {
 }
 
 type EditMode = 'source' | 'split' | 'live';
-
-// Preprocess underline syntax (++text++ and <u>text</u>).
-// Preserves line count so source-line mapping remains accurate.
-function preprocessMarkdown(text: string): string {
-  return text
-    .replace(/<u>([\s\S]*?)<\/u>/gi, '[$1](#u)')
-    .replace(/\+\+([\s\S]*?)\+\+/g, '[$1](#u)');
-}
 
 function getNodeText(node: React.ReactNode): string {
   if (node == null) return '';
