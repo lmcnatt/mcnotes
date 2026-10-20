@@ -68,15 +68,29 @@ db.exec(`
 `);
 
 // Lightweight migrations for pre-existing databases.
-const userColumns = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
-if (!userColumns.some((c) => c.name === 'is_admin')) {
-  db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+try {
+  const userColumns = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  if (!userColumns.some((c) => c.name === 'is_admin')) {
+    db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+  }
+} catch {
+  // Column might have been added concurrently by another worker
 }
-if (!userColumns.some((c) => c.name === 'must_change_password')) {
-  db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+try {
+  const userColumns = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  if (!userColumns.some((c) => c.name === 'must_change_password')) {
+    db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+  }
+} catch {
+  // Column might have been added concurrently by another worker
 }
-if (!userColumns.some((c) => c.name === 'token_version')) {
-  db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0');
+try {
+  const userColumns = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  if (!userColumns.some((c) => c.name === 'token_version')) {
+    db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0');
+  }
+} catch {
+  // Column might have been added concurrently by another worker
 }
 
 // Seed the initial registration setting once, from the environment default.

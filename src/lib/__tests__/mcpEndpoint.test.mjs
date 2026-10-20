@@ -250,5 +250,50 @@ describe('MCP Endpoint and Token Management Integration', () => {
 
       reader.cancel();
     });
+
+    it('supports Streamable HTTP POST without query sessionId (Google Gemini)', async () => {
+      // 1. initialize
+      const initReq = new Request('http://localhost:3000/api/mcp', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${rawToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'google', version: '1.0' } },
+        }),
+      });
+      const initRes = await mcpPost(initReq);
+      assert.equal(initRes.status, 200);
+      assert.equal(initRes.headers.get('content-type'), 'application/json');
+      const initData = await initRes.json();
+      assert.equal(initData.result.serverInfo.name, 'McNotes');
+      const sessId = initRes.headers.get('mcp-session-id');
+      assert.ok(sessId, 'Should return mcp-session-id header');
+
+      // 2. tools/list
+      const listReq = new Request('http://localhost:3000/api/mcp', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${rawToken}`,
+          'content-type': 'application/json',
+          'mcp-session-id': sessId,
+          'mcp-protocol-version': '2024-11-05',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/list',
+        }),
+      });
+      const listRes = await mcpPost(listReq);
+      assert.equal(listRes.status, 200);
+      const listData = await listRes.json();
+      assert.ok(Array.isArray(listData.result.tools));
+      assert.ok(listData.result.tools.some((t) => t.name === 'list_notes'));
+    });
   });
 });

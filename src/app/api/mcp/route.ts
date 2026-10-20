@@ -1,8 +1,10 @@
 import { EventEmitter } from 'events';
 import path from 'path';
+import crypto from 'crypto';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { verifyApiToken } from '../../../lib/db.ts';
 import { listTree, getNote, saveNote, searchNotes } from '../../../lib/notes.ts';
 import { getBacklinksForNote } from '../../../lib/links.ts';
@@ -71,7 +73,16 @@ interface McpSession {
   createdAt: number;
 }
 
+interface StreamableSession {
+  sessionId: string;
+  userId: string;
+  transport: WebStandardStreamableHTTPServerTransport;
+  server: McpServer;
+  createdAt: number;
+}
+
 const sessions = new Map<string, McpSession>();
+const streamableSessions = new Map<string, StreamableSession>();
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 function cleanupStaleSessions() {
@@ -82,6 +93,14 @@ function cleanupStaleSessions() {
         session.transport.close();
       } catch {}
       sessions.delete(id);
+    }
+  }
+  for (const [id, session] of streamableSessions.entries()) {
+    if (now - session.createdAt > SESSION_TTL_MS) {
+      try {
+        session.transport.close();
+      } catch {}
+      streamableSessions.delete(id);
     }
   }
 }
@@ -286,7 +305,8 @@ export async function OPTIONS() {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, mcp-session-id, mcp-protocol-version',
+      'Access-Control-Expose-Headers': 'mcp-session-id, mcp-protocol-version',
     },
   });
 }
@@ -363,9 +383,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const url = new URL(request.url);
-    const sessionId = url.searchParams.get('sessionId');
+    const querySessionId = url.searchParams.get('sessionId');
 
-    if (!sessionId) {
+    if (!querySessionId) {
+      // Streamable HTTP transport (e.g. Gemini Connectors, modern web MCP clients)
       const auth = await authenticateRequest(request);
       if (!auth) {
         const origin = getOrigin(request);
@@ -378,13 +399,72 @@ export async function POST(request: Request) {
           },
         });
       }
-      return new Response('Missing sessionId parameter', {
-        status: 400,
-        headers: { 'Access-Control-Allow-Origin': '*' },
+
+      let body: any;
+      try {
+        body = await request.json();
+      } catch {
+        return new Response('Invalid JSON body', {
+          status: 400,
+          headers: { 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      cleanupStaleSessions();
+
+      const headerSessionId = request.headers.get('mcp-session-id');
+      let streamableSession = headerSessionId ? streamableSessions.get(headerSessionId) : undefined;
+
+      if (!streamableSession) {
+        const newSessionId = crypto.randomUUID();
+        const server = createScopedMcpServer(auth.userId);
+        const transport = new WebStandardStreamableHTTPServerTransport({
+          sessionIdGenerator: () => newSessionId,
+          enableJsonResponse: true,
+        });
+        await server.connect(transport);
+        streamableSession = {
+          sessionId: newSessionId,
+          userId: auth.userId,
+          transport,
+          server,
+          createdAt: Date.now(),
+        };
+        streamableSessions.set(newSessionId, streamableSession);
+      } else if (streamableSession.userId !== auth.userId) {
+        return new Response('Forbidden', {
+          status: 403,
+          headers: { 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      // Ensure Accept header satisfies MCP Streamable HTTP spec
+      const reqHeaders = new Headers(request.headers);
+      const existingAccept = reqHeaders.get('accept') || '';
+      if (!existingAccept.includes('application/json') || !existingAccept.includes('text/event-stream')) {
+        reqHeaders.set('accept', 'application/json, text/event-stream');
+      }
+
+      const reqForTransport = new Request(request.url, {
+        method: request.method,
+        headers: reqHeaders,
+      });
+
+      const response = await streamableSession.transport.handleRequest(reqForTransport, {
+        parsedBody: body,
+      });
+
+      const resHeaders = new Headers(response.headers);
+      resHeaders.set('Access-Control-Allow-Origin', '*');
+      resHeaders.set('Access-Control-Expose-Headers', 'mcp-session-id, mcp-protocol-version');
+
+      return new Response(response.body, {
+        status: response.status,
+        headers: resHeaders,
       });
     }
 
-    const session = sessions.get(sessionId);
+    const session = sessions.get(querySessionId);
     if (!session) {
       return new Response('Session not found', {
         status: 404,
