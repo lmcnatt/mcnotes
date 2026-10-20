@@ -1,3 +1,5 @@
+name: mcnotes
+
 services:
   mcnotes:
     image: ghcr.io/lmcnatt/mcnotes:latest
@@ -6,7 +8,8 @@ services:
     ports:
       - "3010:3010"
     volumes:
-      - mcnotes-data:/data
+      - mcnotes_mcnotes-data:/data
 
 volumes:
-  mcnotes-data:
+  mcnotes_mcnotes-data:
+    external: true

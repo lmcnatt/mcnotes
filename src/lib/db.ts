@@ -8,8 +8,9 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-const db = new Database(DB_PATH);
+const db = new Database(DB_PATH, { timeout: 10000 });
 db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 10000');
 
 // Initialize DB schema
 db.exec(`

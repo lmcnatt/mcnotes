@@ -104,7 +104,7 @@ async function authenticateRequest(request: Request): Promise<{ userId: string; 
 
 function createScopedMcpServer(userId: string): McpServer {
   const server = new McpServer({
-    name: 'mcnotes',
+    name: 'McNotes',
     version: '1.0.0',
   });
 
@@ -312,11 +312,12 @@ export async function GET(request: Request) {
     const writer = stream.writable.getWriter();
     const sseRes = new SSEStreamResponse(writer);
 
+    const origin = getOrigin(request);
     const url = new URL(request.url);
     const rawToken = url.searchParams.get('token');
-    const endpointPath = rawToken ? `/api/mcp?token=${encodeURIComponent(rawToken)}` : '/api/mcp';
+    const endpointUrl = rawToken ? `${origin}/api/mcp?token=${encodeURIComponent(rawToken)}` : `${origin}/api/mcp`;
 
-    const transport = new SSEServerTransport(endpointPath, sseRes as any);
+    const transport = new SSEServerTransport(endpointUrl, sseRes as any);
     const server = createScopedMcpServer(auth.userId);
 
     const sessionId = transport.sessionId;
