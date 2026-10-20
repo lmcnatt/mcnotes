@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { USERS_DIR } from './config';
+import { USERS_DIR } from './config.ts';
+import { getAllNodeMetadata, resolveUsername } from './db.ts';
 
 const BASE_NOTES_DIR = USERS_DIR;
 
@@ -171,7 +172,8 @@ interface SearchResult {
   matches: { line: number; text: string }[];
 }
 
-export function searchNotes(username: string, query: string): SearchResult[] {
+export function searchNotes(userIdOrUsername: string, query: string): SearchResult[] {
+  const username = resolveUsername(userIdOrUsername);
   const userDir = getUserDir(username);
   const results: SearchResult[] = [];
   const lowercaseQuery = query.toLowerCase();
@@ -222,4 +224,20 @@ export function searchNotes(username: string, query: string): SearchResult[] {
   
   traverse();
   return results;
+}
+
+export function listTree(userId: string): FileNode[] {
+  const username = resolveUsername(userId);
+  const metadata = getAllNodeMetadata(username);
+  return getNotesTree(username, '', metadata);
+}
+
+export function getNote(userId: string, relativePath: string): string {
+  const username = resolveUsername(userId);
+  return readNote(username, relativePath);
+}
+
+export function saveNote(userId: string, relativePath: string, content: string): void {
+  const username = resolveUsername(userId);
+  writeNote(username, relativePath, content);
 }

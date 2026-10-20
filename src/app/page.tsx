@@ -1118,15 +1118,13 @@ export default function Dashboard() {
             <span className="text-xs font-semibold text-text-muted">@{username}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            {isAdmin && (
-              <Link
-                href="/settings"
-                title="Admin settings"
-                className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-text-muted hover:text-text-main border border-border-theme/60 hover:bg-card-bg rounded-lg transition"
-              >
-                <Settings size={12} />
-              </Link>
-            )}
+            <Link
+              href="/settings"
+              title={isAdmin ? 'Admin settings' : 'Settings'}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-text-muted hover:text-text-main border border-border-theme/60 hover:bg-card-bg rounded-lg transition"
+            >
+              <Settings size={12} />
+            </Link>
             <button
               className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-text-muted hover:text-text-main border border-border-theme/60 hover:bg-card-bg rounded-lg transition"
               onClick={handleLogout}

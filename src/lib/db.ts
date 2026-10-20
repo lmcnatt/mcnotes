@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
-import { DATA_DIR, DB_PATH, ALLOW_REGISTRATION_DEFAULT } from './config';
+import crypto from 'crypto';
+import { DATA_DIR, DB_PATH, ALLOW_REGISTRATION_DEFAULT } from './config.ts';
 
 // Ensure the data directory exists before opening the database.
 if (!fs.existsSync(DATA_DIR)) {
@@ -33,6 +34,17 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS api_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_used_at DATETIME,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
 `);
 
 // Lightweight migrations for pre-existing databases.
@@ -68,6 +80,17 @@ export function getUserById(id: number): User | null {
   return (user as User) || null;
 }
 
+export function resolveUsername(userId: string): string {
+  const num = Number(userId);
+  if (!isNaN(num) && userId.trim() !== '') {
+    const user = getUserById(num);
+    if (user) return user.username;
+  }
+  const user = getUserByUsername(userId);
+  if (user) return user.username;
+  return userId;
+}
+
 export function countAdmins(): number {
   const row = db.prepare('SELECT COUNT(*) AS count FROM users WHERE is_admin = 1').get() as {
     count: number;
@@ -92,6 +115,7 @@ export function adminResetUserPassword(id: number, passwordHash: string): void {
 export function deleteUserRecords(id: number, username: string): void {
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM node_metadata WHERE username = ?').run(username);
+    db.prepare('DELETE FROM api_tokens WHERE user_id = ?').run(String(id));
     db.prepare('DELETE FROM users WHERE id = ?').run(id);
   });
   tx();
@@ -211,6 +235,64 @@ export function deleteNodeMetadata(username: string, path: string): void {
 
   const stmt2 = db.prepare('DELETE FROM node_metadata WHERE username = ? AND path LIKE ?');
   stmt2.run(username, path + '/%');
+}
+
+export interface ApiTokenInfo {
+  id: string;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export function hashApiToken(rawToken: string): string {
+  return crypto.createHash('sha256').update(rawToken).digest('hex');
+}
+
+export async function createApiToken(
+  userId: string,
+  name: string
+): Promise<{ id: string; rawToken: string }> {
+  const rawToken = 'mcn_' + crypto.randomBytes(24).toString('hex');
+  const tokenHash = hashApiToken(rawToken);
+  const id = crypto.randomUUID();
+  db.prepare(
+    'INSERT INTO api_tokens (id, user_id, name, token_hash) VALUES (?, ?, ?, ?)'
+  ).run(id, String(userId), name, tokenHash);
+  return { id, rawToken };
+}
+
+export async function verifyApiToken(
+  rawToken: string
+): Promise<{ userId: string; tokenId: string } | null> {
+  if (!rawToken || typeof rawToken !== 'string') return null;
+  const tokenHash = hashApiToken(rawToken);
+  const row = db
+    .prepare('SELECT id, user_id FROM api_tokens WHERE token_hash = ?')
+    .get(tokenHash) as { id: string; user_id: string } | undefined;
+  if (!row) return null;
+
+  db.prepare('UPDATE api_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?').run(row.id);
+  return { userId: row.user_id, tokenId: row.id };
+}
+
+export async function listApiTokens(
+  userId: string
+): Promise<Array<{ id: string; name: string; created_at: string; last_used_at: string | null }>> {
+  const rows = db
+    .prepare(
+      'SELECT id, name, created_at, last_used_at FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC'
+    )
+    .all(String(userId)) as Array<{
+    id: string;
+    name: string;
+    created_at: string;
+    last_used_at: string | null;
+  }>;
+  return rows;
+}
+
+export async function revokeApiToken(userId: string, tokenId: string): Promise<void> {
+  db.prepare('DELETE FROM api_tokens WHERE user_id = ? AND id = ?').run(String(userId), tokenId);
 }
 
 export default db;

@@ -17,13 +17,15 @@ export async function proxy(request: NextRequest) {
     path === '/api/auth/logout' ||
     path === '/api/auth/registration-status';
   const isHealthCheck = path === '/api/health';
+  const isMcpApi = path.startsWith('/api/mcp');
 
-  // Skip auth checks for static assets, public files, health checks, and auth API routes
+  // Skip auth checks for static assets, public files, health checks, auth API routes, and MCP endpoint
   if (
     path.startsWith('/_next') ||
     path.startsWith('/favicon.ico') ||
     isHealthCheck ||
-    isPublicAuthApi
+    isPublicAuthApi ||
+    isMcpApi
   ) {
     return NextResponse.next();
   }

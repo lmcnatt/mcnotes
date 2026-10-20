@@ -1,13 +1,14 @@
 import fs from 'fs';
 import path from 'path';
-import { getUserDir } from './notes';
-export * from './linkUtils';
+import { getUserDir } from './notes.ts';
+import { resolveUsername } from './db.ts';
+export * from './linkUtils.ts';
 import {
   resolveLink,
   findLinksInMarkdown,
   computeRelativePath,
-  BacklinkItem,
-} from './linkUtils';
+  type BacklinkItem,
+} from './linkUtils.ts';
 
 const MARKDOWN_LINK_REGEX = /(!?)\[([^\]]*)\]\(([^)]+)\)/g;
 
@@ -343,3 +344,9 @@ export function getAllNotesAndFolders(username: string): {
   scanDir();
   return items;
 }
+
+export function getBacklinksForNote(userId: string, targetPath: string): BacklinkItem[] {
+  const username = resolveUsername(userId);
+  return findBacklinks(username, targetPath);
+}
+

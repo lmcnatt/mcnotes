@@ -14,6 +14,7 @@ import {
   KeyRound,
   Trash2,
 } from 'lucide-react';
+import McpTokensSection from '@/components/McpTokensSection';
 
 interface ManagedUser {
   id: number;
@@ -48,7 +49,7 @@ function formatDate(value: string): string {
 export default function SettingsPage() {
   const [allowRegistration, setAllowRegistration] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [forbidden, setForbidden] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Create user state
@@ -73,11 +74,16 @@ export default function SettingsPage() {
   const loadUsers = async () => {
     try {
       const res = await fetch('/api/admin/users');
+      if (res.status === 403) {
+        setIsAdmin(false);
+        return;
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load users');
       setUsers(data.users || []);
       setCurrentUsername(data.currentUsername || '');
       setUsersError(null);
+      setIsAdmin(true);
     } catch (err: any) {
       setUsersError(err.message || 'Failed to load users');
     }
@@ -158,15 +164,18 @@ export default function SettingsPage() {
           return null;
         }
         if (res.status === 403) {
-          setForbidden(true);
+          setIsAdmin(false);
           return null;
         }
         return res.json();
       })
       .then((data) => {
-        if (data) setAllowRegistration(!!data.allowRegistration);
+        if (data) {
+          setIsAdmin(true);
+          setAllowRegistration(!!data.allowRegistration);
+        }
       })
-      .catch(() => setForbidden(true))
+      .catch(() => setIsAdmin(false))
       .finally(() => setLoading(false));
   }, [router]);
 
@@ -233,27 +242,35 @@ export default function SettingsPage() {
         </Link>
 
         <div>
-          <h1 className="text-2xl font-semibold text-[var(--text-main)]">Admin Settings</h1>
-          <p className="mt-1 text-sm text-[var(--text-muted)]">Manage your McNotes instance.</p>
+          <h1 className="text-2xl font-semibold text-[var(--text-main)]">Settings</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
+            Manage your personal access tokens and integrations{isAdmin ? ', or configure this instance' : ''}.
+          </p>
         </div>
 
         {loading ? (
           <div className="flex items-center gap-2 text-[var(--text-muted)]">
             <Loader className="animate-spin" size={18} /> Loading…
           </div>
-        ) : forbidden ? (
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-6 text-sm text-[var(--text-muted)]">
-            You do not have permission to view this page. Only the instance administrator can manage
-            settings.
-          </div>
         ) : (
-          <div className="flex flex-col gap-4">
-            {/* Registration toggle */}
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 sm:p-6">
-              <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                Access
-              </h2>
-              <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-8">
+            {/* MCP & Integrations Section */}
+            <McpTokensSection />
+
+            {/* Admin Settings (Admin-only) */}
+            {isAdmin && (
+              <div className="flex flex-col gap-4 border-t border-[var(--border)] pt-8">
+                <div className="mb-1">
+                  <h2 className="text-lg font-semibold text-[var(--text-main)]">Instance Administration</h2>
+                  <p className="mt-0.5 text-sm text-[var(--text-muted)]">Manage instance-wide registration and user accounts.</p>
+                </div>
+
+                {/* Registration toggle */}
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 sm:p-6">
+                  <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                    Access
+                  </h3>
+                  <div className="flex items-center justify-between gap-4">
                 <div className="flex flex-col gap-1">
                   <span className="font-medium text-[var(--text-main)]">Public registration</span>
                   <span className="text-sm text-[var(--text-muted)]">
@@ -487,6 +504,8 @@ export default function SettingsPage() {
                 );
               })()}
             </div>
+              </div>
+            )}
           </div>
         )}
       </div>

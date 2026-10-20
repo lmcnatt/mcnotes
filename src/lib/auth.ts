@@ -66,3 +66,34 @@ export async function verifyJWT(token: string): Promise<{ username: string; tv?:
   }
 }
 
+export async function getSessionUser(request?: Request) {
+  let username: string | null = null;
+  if (request) {
+    username = request.headers.get('x-user-username');
+  }
+  if (!username) {
+    try {
+      const { cookies } = await import('next/headers');
+      const cookieStore = await cookies();
+      const token = cookieStore.get('auth_token')?.value;
+      if (token) {
+        const decoded = await verifyJWT(token);
+        if (decoded) username = decoded.username;
+      }
+    } catch {
+      // outside request context
+    }
+  }
+  if (!username && request) {
+    const cookieHeader = request.headers.get('cookie') || '';
+    const match = cookieHeader.match(/auth_token=([^;]+)/);
+    if (match) {
+      const decoded = await verifyJWT(match[1]);
+      if (decoded) username = decoded.username;
+    }
+  }
+  if (!username) return null;
+  const { getUserByUsername } = await import('./db.ts');
+  return getUserByUsername(username);
+}
+

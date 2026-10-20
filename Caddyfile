@@ -1,4 +1,12 @@
 {env}
 {$DOMAIN:localhost} {
-  reverse_proxy mcnotes:3010
+  handle /api/mcp* {
+    reverse_proxy localhost:3000 {
+      flush_interval -1
+    }
+  }
+
+  handle {
+    reverse_proxy localhost:3000
+  }
 }
