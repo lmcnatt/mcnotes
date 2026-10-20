@@ -4,7 +4,6 @@ import {
   createApiToken,
   createUser,
   deleteUserRecords,
-  revokeApiToken,
 } from '../db.ts';
 import { GET as mcpGet, POST as mcpPost } from '../../app/api/mcp/route.ts';
 import { GET as tokensGet, POST as tokensPost, DELETE as tokensDelete } from '../../app/api/tokens/route.ts';

@@ -45,6 +45,25 @@ db.exec(`
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
+
+  CREATE TABLE IF NOT EXISTS oauth_clients (
+    client_id TEXT PRIMARY KEY,
+    client_secret TEXT,
+    client_name TEXT NOT NULL,
+    redirect_uris TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS oauth_codes (
+    code TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    code_challenge TEXT NOT NULL,
+    code_challenge_method TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0
+  );
 `);
 
 // Lightweight migrations for pre-existing databases.
@@ -293,6 +312,98 @@ export async function listApiTokens(
 
 export async function revokeApiToken(userId: string, tokenId: string): Promise<void> {
   db.prepare('DELETE FROM api_tokens WHERE user_id = ? AND id = ?').run(String(userId), tokenId);
+}
+
+export interface OAuthClient {
+  client_id: string;
+  client_secret?: string | null;
+  client_name: string;
+  redirect_uris: string[];
+  created_at: string;
+}
+
+export interface OAuthCodeRecord {
+  code: string;
+  client_id: string;
+  user_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  code_challenge_method: string;
+  expires_at: number;
+  used: number;
+}
+
+export function registerOAuthClient(params: {
+  clientName: string;
+  redirectUris: string[];
+  clientSecret?: string;
+}): OAuthClient {
+  const clientId = 'mc_client_' + crypto.randomBytes(16).toString('hex');
+  const clientSecret = params.clientSecret || crypto.randomBytes(32).toString('hex');
+  const redirectUrisJson = JSON.stringify(params.redirectUris);
+  db.prepare(
+    'INSERT INTO oauth_clients (client_id, client_secret, client_name, redirect_uris) VALUES (?, ?, ?, ?)'
+  ).run(clientId, clientSecret, params.clientName, redirectUrisJson);
+  return {
+    client_id: clientId,
+    client_secret: clientSecret,
+    client_name: params.clientName,
+    redirect_uris: params.redirectUris,
+    created_at: new Date().toISOString(),
+  };
+}
+
+export function getOAuthClient(clientId: string): OAuthClient | null {
+  const row = db.prepare('SELECT * FROM oauth_clients WHERE client_id = ?').get(clientId) as any;
+  if (!row) return null;
+  let uris: string[] = [];
+  try {
+    uris = JSON.parse(row.redirect_uris);
+  } catch {}
+  return {
+    client_id: row.client_id,
+    client_secret: row.client_secret,
+    client_name: row.client_name,
+    redirect_uris: uris,
+    created_at: row.created_at,
+  };
+}
+
+export function createOAuthCode(params: {
+  clientId: string;
+  userId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  codeChallengeMethod?: string;
+  ttlSeconds?: number;
+}): string {
+  const code = 'mc_code_' + crypto.randomBytes(24).toString('hex');
+  const ttl = params.ttlSeconds || 600; // 10 minutes default
+  const expiresAt = Math.floor(Date.now() / 1000) + ttl;
+  db.prepare(
+    `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, code_challenge, code_challenge_method, expires_at, used)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0)`
+  ).run(
+    code,
+    params.clientId,
+    String(params.userId),
+    params.redirectUri,
+    params.codeChallenge,
+    params.codeChallengeMethod || 'S256',
+    expiresAt
+  );
+  return code;
+}
+
+export function consumeOAuthCode(code: string): OAuthCodeRecord | null {
+  const now = Math.floor(Date.now() / 1000);
+  const row = db.prepare('SELECT * FROM oauth_codes WHERE code = ?').get(code) as OAuthCodeRecord | undefined;
+  if (!row) return null;
+  if (row.used === 1 || row.expires_at < now) {
+    return null;
+  }
+  db.prepare('UPDATE oauth_codes SET used = 1 WHERE code = ?').run(code);
+  return row;
 }
 
 export default db;

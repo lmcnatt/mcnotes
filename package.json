@@ -8,14 +8,14 @@
     "start": "next start -p 3010",
     "reload": "npm run build && pm2 reload notes",
     "lint": "eslint",
-    "test": "node --test src/lib/__tests__/*.test.mjs"
+    "test": "node --test --test-concurrency=1 src/lib/__tests__/*.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.13",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.3",
     "jose": "^6.2.3",
     "lucide-react": "^1.24.0",
     "next": "16.2.10",

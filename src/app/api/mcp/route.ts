@@ -271,13 +271,38 @@ function createScopedMcpServer(userId: string): McpServer {
   return server;
 }
 
+function getOrigin(request: Request): string {
+  const url = new URL(request.url);
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const host = forwardedHost || request.headers.get('host') || url.host;
+  const proto = forwardedProto || url.protocol.replace(':', '');
+  return `${proto}://${host}`;
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    },
+  });
+}
+
 export async function GET(request: Request) {
   try {
     const auth = await authenticateRequest(request);
     if (!auth) {
+      const origin = getOrigin(request);
       return new Response('Unauthorized', {
         status: 401,
-        headers: { 'WWW-Authenticate': 'Bearer' },
+        headers: {
+          'WWW-Authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+          'Link': `<${origin}/.well-known/oauth-authorization-server>; rel="oauth-authorization-server"`,
+          'Access-Control-Allow-Origin': '*',
+        },
       });
     }
 
@@ -322,11 +347,15 @@ export async function GET(request: Request) {
         'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
         'X-Accel-Buffering': 'no',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error: any) {
     console.error('Failed to establish MCP SSE stream:', error);
-    return new Response(error.message || 'Internal server error', { status: 500 });
+    return new Response(error.message || 'Internal server error', {
+      status: 500,
+      headers: { 'Access-Control-Allow-Origin': '*' },
+    });
   }
 }
 
@@ -336,24 +365,48 @@ export async function POST(request: Request) {
     const sessionId = url.searchParams.get('sessionId');
 
     if (!sessionId) {
-      return new Response('Missing sessionId parameter', { status: 400 });
+      const auth = await authenticateRequest(request);
+      if (!auth) {
+        const origin = getOrigin(request);
+        return new Response('Unauthorized', {
+          status: 401,
+          headers: {
+            'WWW-Authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+            'Link': `<${origin}/.well-known/oauth-authorization-server>; rel="oauth-authorization-server"`,
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+      return new Response('Missing sessionId parameter', {
+        status: 400,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
     }
 
     const session = sessions.get(sessionId);
     if (!session) {
-      return new Response('Session not found', { status: 404 });
+      return new Response('Session not found', {
+        status: 404,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
     }
 
     const auth = await authenticateRequest(request);
     if (auth && auth.userId !== session.userId) {
-      return new Response('Forbidden', { status: 403 });
+      return new Response('Forbidden', {
+        status: 403,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
     }
 
     let body: any;
     try {
       body = await request.json();
     } catch {
-      return new Response('Invalid JSON body', { status: 400 });
+      return new Response('Invalid JSON body', {
+        status: 400,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
     }
 
     let postStatus = 202;
@@ -382,9 +435,18 @@ export async function POST(request: Request) {
 
     await session.transport.handlePostMessage(mockReq as any, postRes as any, body);
 
-    return new Response(postBody, { status: postStatus });
+    return new Response(postBody, {
+      status: postStatus,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'text/plain',
+      },
+    });
   } catch (error: any) {
     console.error('Failed to process MCP POST message:', error);
-    return new Response(error.message || 'Internal server error', { status: 500 });
+    return new Response(error.message || 'Internal server error', {
+      status: 500,
+      headers: { 'Access-Control-Allow-Origin': '*' },
+    });
   }
 }

@@ -18,14 +18,16 @@ export async function proxy(request: NextRequest) {
     path === '/api/auth/registration-status';
   const isHealthCheck = path === '/api/health';
   const isMcpApi = path.startsWith('/api/mcp');
+  const isWellKnown = path.startsWith('/.well-known/');
+  const isOAuthApi = path.startsWith('/api/oauth/');
+  const isOAuthAuthorize = path === '/oauth/authorize';
 
-  // Skip auth checks for static assets, public files, health checks, auth API routes, and MCP endpoint
+  // Skip auth checks for static assets, public files, health checks, and public auth API routes
   if (
     path.startsWith('/_next') ||
     path.startsWith('/favicon.ico') ||
     isHealthCheck ||
-    isPublicAuthApi ||
-    isMcpApi
+    isPublicAuthApi
   ) {
     return NextResponse.next();
   }
@@ -53,6 +55,23 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL('/', request.nextUrl));
     }
     const res = NextResponse.next();
+    if (staleToken) res.cookies.delete('auth_token');
+    return res;
+  }
+
+  // MCP, OAuth endpoints, and RFC discovery routes manage their own authentication
+  // (Bearer PAT, PKCE codes, or inline authorization consent).
+  // If a valid session cookie exists, attach x-user-username so handlers can use it.
+  if (isWellKnown || isOAuthApi || isOAuthAuthorize || isMcpApi) {
+    const requestHeaders = new Headers(request.headers);
+    if (verifiedToken) {
+      requestHeaders.set('x-user-username', verifiedToken.username);
+    }
+    const res = NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
     if (staleToken) res.cookies.delete('auth_token');
     return res;
   }
@@ -85,6 +104,8 @@ export const config = {
     '/register',
     '/settings',
     '/change-password',
+    '/oauth/authorize',
+    '/.well-known/:path*',
     '/api/:path*',
   ],
 };
