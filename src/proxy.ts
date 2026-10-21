@@ -63,10 +63,13 @@ export async function proxy(request: NextRequest) {
   // (Bearer PAT, PKCE codes, or inline authorization consent).
   // If a valid session cookie exists, attach x-user-username so handlers can use it.
   if (isWellKnown || isOAuthApi || isOAuthAuthorize || isMcpApi) {
-    const requestHeaders = new Headers(request.headers);
-    if (verifiedToken) {
-      requestHeaders.set('x-user-username', verifiedToken.username);
+    if (!verifiedToken) {
+      const res = NextResponse.next();
+      if (staleToken) res.cookies.delete('auth_token');
+      return res;
     }
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-user-username', verifiedToken.username);
     const res = NextResponse.next({
       request: {
         headers: requestHeaders,

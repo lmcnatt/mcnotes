@@ -14,6 +14,15 @@ export async function OPTIONS() {
   });
 }
 
+function getOrigin(request: Request): string {
+  const url = new URL(request.url);
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const host = forwardedHost || request.headers.get('host') || url.host;
+  const proto = forwardedProto || url.protocol.replace(':', '');
+  return `${proto}://${host}`;
+}
+
 export async function POST(request: Request) {
   try {
     const user = await getSessionUser(request);
@@ -67,6 +76,8 @@ export async function POST(request: Request) {
     if (state) {
       targetUrl.searchParams.set('state', state);
     }
+    // RFC 9207 Issuer Identification in authorization response
+    targetUrl.searchParams.set('iss', getOrigin(request));
 
     return Response.json(
       { redirectUrl: targetUrl.toString() },

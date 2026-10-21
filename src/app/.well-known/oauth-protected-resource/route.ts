@@ -16,6 +16,7 @@ export async function GET(request: Request) {
     authorization_servers: [origin],
     scopes_supported: ['mcnotes'],
     bearer_methods_supported: ['header'],
+    resource_name: 'McNotes MCP Server',
   };
 
   return Response.json(metadata, {

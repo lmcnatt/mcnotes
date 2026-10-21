@@ -114,10 +114,16 @@ async function authenticateRequest(request: Request): Promise<{ userId: string; 
   let token: string | null = null;
   if (authHeader.toLowerCase().startsWith('bearer ')) {
     token = authHeader.substring(7).trim();
+    if (token.startsWith('"') && token.endsWith('"')) {
+      token = token.slice(1, -1);
+    }
   }
   if (!token) {
     const url = new URL(request.url);
     token = url.searchParams.get('token');
+  }
+  if (!token) {
+    token = request.headers.get('x-api-token') || request.headers.get('x-api-key') || null;
   }
   if (!token) {
     return null;
@@ -351,7 +357,7 @@ export async function OPTIONS() {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, mcp-session-id, mcp-protocol-version',
-      'Access-Control-Expose-Headers': 'mcp-session-id, mcp-protocol-version',
+      'Access-Control-Expose-Headers': 'WWW-Authenticate, Link, mcp-session-id, mcp-protocol-version',
     },
   });
 }
@@ -364,9 +370,10 @@ export async function GET(request: Request) {
       return new Response('Unauthorized', {
         status: 401,
         headers: {
-          'WWW-Authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+          'WWW-Authenticate': `Bearer realm="OAuth", resource_metadata="${origin}/.well-known/oauth-protected-resource", scope="mcnotes"`,
           'Link': `<${origin}/.well-known/oauth-authorization-server>; rel="oauth-authorization-server"`,
           'Access-Control-Allow-Origin': '*',
+          'Access-Control-Expose-Headers': 'WWW-Authenticate, Link, mcp-session-id, mcp-protocol-version',
         },
       });
     }
@@ -446,9 +453,10 @@ export async function POST(request: Request) {
         return new Response('Unauthorized', {
           status: 401,
           headers: {
-            'WWW-Authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+            'WWW-Authenticate': `Bearer realm="OAuth", resource_metadata="${origin}/.well-known/oauth-protected-resource", scope="mcnotes"`,
             'Link': `<${origin}/.well-known/oauth-authorization-server>; rel="oauth-authorization-server"`,
             'Access-Control-Allow-Origin': '*',
+            'Access-Control-Expose-Headers': 'WWW-Authenticate, Link, mcp-session-id, mcp-protocol-version',
           },
         });
       }

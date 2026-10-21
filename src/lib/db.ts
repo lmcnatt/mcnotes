@@ -65,6 +65,16 @@ db.exec(`
     expires_at INTEGER NOT NULL,
     used INTEGER NOT NULL DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+    token_hash TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    token_id TEXT,
+    expires_at INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_oauth_refresh_client ON oauth_refresh_tokens(client_id);
 `);
 
 // Lightweight migrations for pre-existing databases.
@@ -418,6 +428,47 @@ export function consumeOAuthCode(code: string): OAuthCodeRecord | null {
     return null;
   }
   db.prepare('UPDATE oauth_codes SET used = 1 WHERE code = ?').run(code);
+  return row;
+}
+
+export interface OAuthRefreshTokenRecord {
+  client_id: string;
+  user_id: string;
+  token_id: string | null;
+  expires_at: number;
+}
+
+export function createOAuthRefreshToken(params: {
+  clientId: string;
+  userId: string;
+  tokenId?: string;
+  ttlSeconds?: number;
+}): string {
+  const rawRefreshToken = 'mcn_r_' + crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashApiToken(rawRefreshToken);
+  const ttl = params.ttlSeconds || 31536000; // 1 year default
+  const expiresAt = Math.floor(Date.now() / 1000) + ttl;
+  db.prepare(
+    `INSERT INTO oauth_refresh_tokens (token_hash, client_id, user_id, token_id, expires_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(tokenHash, params.clientId, String(params.userId), params.tokenId || null, expiresAt);
+  return rawRefreshToken;
+}
+
+export function consumeOAuthRefreshToken(rawRefreshToken: string): OAuthRefreshTokenRecord | null {
+  if (!rawRefreshToken || typeof rawRefreshToken !== 'string') return null;
+  const tokenHash = hashApiToken(rawRefreshToken);
+  const now = Math.floor(Date.now() / 1000);
+  const row = db.prepare(
+    'SELECT client_id, user_id, token_id, expires_at FROM oauth_refresh_tokens WHERE token_hash = ?'
+  ).get(tokenHash) as OAuthRefreshTokenRecord | undefined;
+  if (!row) return null;
+  if (row.expires_at < now) {
+    db.prepare('DELETE FROM oauth_refresh_tokens WHERE token_hash = ?').run(tokenHash);
+    return null;
+  }
+  // Rotate: remove old refresh token upon successful consumption
+  db.prepare('DELETE FROM oauth_refresh_tokens WHERE token_hash = ?').run(tokenHash);
   return row;
 }
 

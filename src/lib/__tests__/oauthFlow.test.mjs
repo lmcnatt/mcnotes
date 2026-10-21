@@ -78,8 +78,10 @@ describe('OAuth 2.1 & MCP Authorization Specification Flow', () => {
 
       const wwwAuth = res.headers.get('www-authenticate');
       assert.ok(wwwAuth, 'Missing WWW-Authenticate header');
+      assert.ok(wwwAuth.startsWith('Bearer '));
+      assert.ok(wwwAuth.includes('realm="OAuth"'));
       assert.ok(
-        wwwAuth.includes('Bearer resource_metadata="http://localhost:3000/.well-known/oauth-protected-resource"')
+        wwwAuth.includes('resource_metadata="http://localhost:3000/.well-known/oauth-protected-resource"')
       );
 
       const link = res.headers.get('link');
@@ -266,6 +268,8 @@ describe('OAuth 2.1 & MCP Authorization Specification Flow', () => {
       assert.ok(tokenData.access_token.startsWith('mcn_'));
       assert.equal(tokenData.token_type, 'Bearer');
       assert.equal(tokenData.scope, 'mcnotes');
+      assert.ok(tokenData.refresh_token, 'Expected refresh_token in token response');
+      assert.ok(tokenData.refresh_token.startsWith('mcn_r_'));
 
       // Verify the code cannot be reused (consumed)
       const reuseReq = new Request('http://localhost:3000/api/oauth/token', {
@@ -298,6 +302,40 @@ describe('OAuth 2.1 & MCP Authorization Specification Flow', () => {
       assert.ok(text.includes('event: endpoint'));
       assert.ok(text.includes('sessionId='));
       reader.cancel();
+
+      // Test refresh_token exchange
+      const refreshReq = new Request('http://localhost:3000/api/oauth/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: registeredClientId,
+          refresh_token: tokenData.refresh_token,
+        }).toString(),
+      });
+      const refreshRes = await tokenPost(refreshReq);
+      assert.equal(refreshRes.status, 200);
+      const refreshedData = await refreshRes.json();
+      assert.ok(refreshedData.access_token);
+      assert.ok(refreshedData.access_token.startsWith('mcn_'));
+      assert.ok(refreshedData.refresh_token);
+      assert.ok(refreshedData.refresh_token.startsWith('mcn_r_'));
+      assert.notEqual(refreshedData.refresh_token, tokenData.refresh_token, 'Refresh token should rotate');
+
+      // Old refresh token must be invalidated (single-use rotation)
+      const oldRefreshReq = new Request('http://localhost:3000/api/oauth/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: registeredClientId,
+          refresh_token: tokenData.refresh_token,
+        }).toString(),
+      });
+      const oldRefreshRes = await tokenPost(oldRefreshReq);
+      assert.equal(oldRefreshRes.status, 400);
+      const oldRefreshData = await oldRefreshRes.json();
+      assert.equal(oldRefreshData.error, 'invalid_grant');
     });
   });
 });
