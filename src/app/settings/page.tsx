@@ -244,7 +244,7 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-2xl font-semibold text-[var(--text-main)]">Settings</h1>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
-            Manage your personal access tokens and integrations{isAdmin ? ', or configure this instance' : ''}.
+            Manage MCP integrations, access tokens{isAdmin ? ', and instance configuration' : ''}.
           </p>
         </div>
 
@@ -261,8 +261,8 @@ export default function SettingsPage() {
             {isAdmin && (
               <div className="flex flex-col gap-4 border-t border-[var(--border)] pt-8">
                 <div className="mb-1">
-                  <h2 className="text-lg font-semibold text-[var(--text-main)]">Instance Administration</h2>
-                  <p className="mt-0.5 text-sm text-[var(--text-muted)]">Manage instance-wide registration and user accounts.</p>
+                  <h2 className="text-lg font-semibold text-[var(--text-main)]">Administration</h2>
+                  <p className="mt-0.5 text-sm text-[var(--text-muted)]">Instance registration and user accounts.</p>
                 </div>
 
                 {/* Registration toggle */}
@@ -274,7 +274,7 @@ export default function SettingsPage() {
                 <div className="flex flex-col gap-1">
                   <span className="font-medium text-[var(--text-main)]">Public registration</span>
                   <span className="text-sm text-[var(--text-muted)]">
-                    Allow anyone to create an account on this instance.
+                    Allow new users to sign up without an invite.
                   </span>
                 </div>
                 {/* Peer-based toggle — thumb is positioned via CSS pseudo-element, never overflows */}
@@ -309,8 +309,7 @@ export default function SettingsPage() {
                 <h2 className="font-semibold text-[var(--text-main)]">Create User Account</h2>
               </div>
               <p className="mb-5 text-sm text-[var(--text-muted)]">
-                Create an account and share the credentials. The user will be prompted to set their
-                own password on first sign-in.
+                The user will be prompted to set their password on first sign-in.
               </p>
 
               {createError && (
@@ -361,9 +360,6 @@ export default function SettingsPage() {
                     placeholder="Temporary password to share"
                     autoComplete="off"
                   />
-                  <p className="text-xs text-[var(--text-muted)]">
-                    Share this with the user — they&apos;ll be asked to change it on first sign-in.
-                  </p>
                 </div>
 
                 <button
