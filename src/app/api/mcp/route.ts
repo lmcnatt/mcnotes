@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import path from 'path';
 import crypto from 'crypto';
 import { z } from 'zod';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { verifyApiToken } from '../../../lib/db.ts';
@@ -83,6 +83,7 @@ interface StreamableSession {
 
 const sessions = new Map<string, McpSession>();
 const streamableSessions = new Map<string, StreamableSession>();
+const userLastStreamableSessionId = new Map<string, string>();
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 function cleanupStaleSessions() {
@@ -101,6 +102,9 @@ function cleanupStaleSessions() {
         session.transport.close();
       } catch {}
       streamableSessions.delete(id);
+      if (userLastStreamableSessionId.get(session.userId) === id) {
+        userLastStreamableSessionId.delete(session.userId);
+      }
     }
   }
 }
@@ -122,16 +126,26 @@ async function authenticateRequest(request: Request): Promise<{ userId: string; 
 }
 
 function createScopedMcpServer(userId: string): McpServer {
-  const server = new McpServer({
-    name: 'McNotes',
-    version: '1.0.0',
-  });
+  const server = new McpServer(
+    {
+      name: 'McNotes',
+      version: '1.0.0',
+    },
+    {
+      instructions:
+        "You are connected to McNotes, the user's personal self-hosted markdown notebook and knowledge base.\n" +
+        "You have the user's explicit authorization and permission to access, list, search, read, and write their personal notes in this workspace.\n" +
+        "When the user asks questions about their notes, books, summaries, ideas, quotes, or thoughts, proactively call the McNotes tools ('search_notes', 'list_notes', 'read_note') to retrieve the answers directly from their workspace.\n" +
+        "Never say you do not have access to their personal notes — you have direct, authorized access through these tools.",
+    }
+  );
 
   server.tool(
     'list_notes',
-    'List all notes and directories in your mcnotes workspace',
+    "List all folders, subfolders, and markdown notes stored in the user's personal McNotes workspace.",
     {},
     async () => {
+      console.log(`[MCP TOOL] list_notes called for user: ${userId}`);
       try {
         const tree = listTree(userId);
         return {
@@ -143,6 +157,7 @@ function createScopedMcpServer(userId: string): McpServer {
           ],
         };
       } catch (err: any) {
+        console.error(`[MCP TOOL ERROR] list_notes:`, err);
         return {
           content: [
             {
@@ -158,11 +173,12 @@ function createScopedMcpServer(userId: string): McpServer {
 
   server.tool(
     'read_note',
-    'Read the markdown content of a note by its relative path',
+    "Read the full markdown content of a personal note from the user's McNotes workspace by its relative path (e.g. 'Soveris/7 Habits/Key Points.md' or 'Links to Share/Notes.md').",
     {
-      path: z.string().describe('Relative path to the note (e.g. "meeting-notes.md" or "work/project.md")'),
+      path: z.string().describe("Relative path to the note (e.g. 'Soveris/7 Habits/Key Points.md')"),
     },
     async ({ path: notePath }) => {
+      console.log(`[MCP TOOL] read_note called for user: ${userId}, path: "${notePath}"`);
       try {
         if (notePath.includes('..') || path.isAbsolute(notePath)) {
           throw new Error('Access denied: Path traversal detected');
@@ -177,6 +193,7 @@ function createScopedMcpServer(userId: string): McpServer {
           ],
         };
       } catch (err: any) {
+        console.error(`[MCP TOOL ERROR] read_note for "${notePath}":`, err);
         return {
           content: [
             {
@@ -192,12 +209,13 @@ function createScopedMcpServer(userId: string): McpServer {
 
   server.tool(
     'save_note',
-    'Save or update a note with the specified markdown content',
+    "Save or update a personal note in McNotes with the specified markdown content.",
     {
-      path: z.string().describe('Relative path to the note (e.g. "meeting-notes.md" or "work/project.md")'),
+      path: z.string().describe("Relative path to the note (e.g. 'Soveris/7 Habits/Key Points.md')"),
       content: z.string().describe('Full markdown content to write to the note'),
     },
     async ({ path: notePath, content }) => {
+      console.log(`[MCP TOOL] save_note called for user: ${userId}, path: "${notePath}"`);
       try {
         if (notePath.includes('..') || path.isAbsolute(notePath)) {
           throw new Error('Access denied: Path traversal detected');
@@ -212,6 +230,7 @@ function createScopedMcpServer(userId: string): McpServer {
           ],
         };
       } catch (err: any) {
+        console.error(`[MCP TOOL ERROR] save_note:`, err);
         return {
           content: [
             {
@@ -227,11 +246,12 @@ function createScopedMcpServer(userId: string): McpServer {
 
   server.tool(
     'search_notes',
-    'Search across all notes for matching text or titles',
+    "Search across all the user's personal notes in McNotes for matching keywords, topics, text, or titles.",
     {
-      query: z.string().describe('Search term or phrase to query'),
+      query: z.string().describe("Search term or keyword to find within the user's personal notes"),
     },
     async ({ query }) => {
+      console.log(`[MCP TOOL] search_notes called for user: ${userId}, query: "${query}"`);
       try {
         const results = searchNotes(userId, query);
         return {
@@ -243,6 +263,7 @@ function createScopedMcpServer(userId: string): McpServer {
           ],
         };
       } catch (err: any) {
+        console.error(`[MCP TOOL ERROR] search_notes:`, err);
         return {
           content: [
             {
@@ -258,11 +279,12 @@ function createScopedMcpServer(userId: string): McpServer {
 
   server.tool(
     'get_backlinks',
-    'Find all notes that link to the specified note path',
+    "Find all personal notes in McNotes that link to the specified note path.",
     {
-      path: z.string().describe('Relative path of the target note (e.g. "reference.md")'),
+      path: z.string().describe("Relative path of the target note (e.g. 'reference.md')"),
     },
     async ({ path: notePath }) => {
+      console.log(`[MCP TOOL] get_backlinks called for user: ${userId}, path: "${notePath}"`);
       try {
         const backlinks = getBacklinksForNote(userId, notePath);
         return {
@@ -274,6 +296,7 @@ function createScopedMcpServer(userId: string): McpServer {
           ],
         };
       } catch (err: any) {
+        console.error(`[MCP TOOL ERROR] get_backlinks:`, err);
         return {
           content: [
             {
@@ -284,6 +307,28 @@ function createScopedMcpServer(userId: string): McpServer {
           isError: true,
         };
       }
+    }
+  );
+
+  server.resource(
+    'personal-notes',
+    new ResourceTemplate('notes://{path}', { list: undefined }),
+    {
+      description: "User's personal notes and markdown documents in McNotes",
+      mimeType: 'text/markdown',
+    },
+    async (uri, { path: notePath }) => {
+      console.log(`[MCP RESOURCE] read resource: ${uri.href}`);
+      const content = getNote(userId, String(notePath));
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            text: content,
+            mimeType: 'text/markdown',
+          },
+        ],
+      };
     }
   );
 
@@ -327,6 +372,14 @@ export async function GET(request: Request) {
     }
 
     cleanupStaleSessions();
+
+    const headerSessionId = request.headers.get('mcp-session-id');
+    if (headerSessionId && streamableSessions.has(headerSessionId)) {
+      const streamableSession = streamableSessions.get(headerSessionId)!;
+      if (streamableSession.userId === auth.userId) {
+        return streamableSession.transport.handleRequest(request);
+      }
+    }
 
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
@@ -410,10 +463,20 @@ export async function POST(request: Request) {
         });
       }
 
+      console.log(`[MCP POST] user=${auth.userId} method=${body?.method} tool=${body?.params?.name} id=${body?.id}`);
+
       cleanupStaleSessions();
 
       const headerSessionId = request.headers.get('mcp-session-id');
       let streamableSession = headerSessionId ? streamableSessions.get(headerSessionId) : undefined;
+
+      // Fallback for clients or proxies that omit mcp-session-id on subsequent requests
+      if (!streamableSession && body?.method !== 'initialize') {
+        const fallbackId = userLastStreamableSessionId.get(auth.userId);
+        if (fallbackId && streamableSessions.has(fallbackId)) {
+          streamableSession = streamableSessions.get(fallbackId);
+        }
+      }
 
       if (!streamableSession) {
         const newSessionId = crypto.randomUUID();
@@ -438,11 +501,18 @@ export async function POST(request: Request) {
         });
       }
 
+      userLastStreamableSessionId.set(auth.userId, streamableSession.sessionId);
+
       // Ensure Accept header satisfies MCP Streamable HTTP spec
       const reqHeaders = new Headers(request.headers);
       const existingAccept = reqHeaders.get('accept') || '';
       if (!existingAccept.includes('application/json') || !existingAccept.includes('text/event-stream')) {
         reqHeaders.set('accept', 'application/json, text/event-stream');
+      }
+
+      // Ensure transport sees the correct session ID header
+      if (!reqHeaders.has('mcp-session-id') && streamableSession.sessionId) {
+        reqHeaders.set('mcp-session-id', streamableSession.sessionId);
       }
 
       const reqForTransport = new Request(request.url, {
